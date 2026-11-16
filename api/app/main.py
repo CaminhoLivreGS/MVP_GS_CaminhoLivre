@@ -72,6 +72,28 @@ async def observar(request: Request, call_next):
         log.info(json.dumps({"metodo": request.method, "rota": rota, "status": status, "ms": round(dur * 1000, 1)}))
 
 
+# Mesmos cabeçalhos de segurança do nginx (docker/nginx/security-headers.conf),
+# para o deploy em um serviço só (sem nginx na frente).
+CABECALHOS_SEGURANCA = {
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:; img-src 'self' blob: data: https://tile.openstreetmap.org; style-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+    "Permissions-Policy": "camera=(self), microphone=(self), geolocation=(self), payment=(), usb=()",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Strict-Transport-Security": "max-age=31536000",
+}
+
+
+@app.middleware("http")
+async def seguranca(request: Request, call_next):
+    resp = await call_next(request)
+    for k, v in CABECALHOS_SEGURANCA.items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
 # Limite simples por IP (protege a cota do LLM e evita spam de relatos).
 _janelas: dict[str, deque] = defaultdict(deque)
 
@@ -437,3 +459,24 @@ def _contar_llm():
 async def erro_generico(request: Request, exc: Exception):
     log.exception(json.dumps({"erro": exc.__class__.__name__, "rota": request.url.path}))
     return JSONResponse(status_code=500, content={"detail": "Erro interno. Tente de novo em instantes."})
+
+
+# ---------------------------------------------------------------------------
+# Front estático (deploy em um serviço só). Vem por último: /api/* tem prioridade.
+# ---------------------------------------------------------------------------
+if (config.FRONT_DIR / "index.html").exists():
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
+    app.mount("/assets", StaticFiles(directory=config.FRONT_DIR / "assets"), name="assets")
+
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():
+        return Response("ok\n", media_type="text/plain")
+
+    @app.get("/{caminho:path}", include_in_schema=False)
+    def front(caminho: str):
+        alvo = (config.FRONT_DIR / caminho).resolve()
+        if caminho and alvo.is_file() and config.FRONT_DIR.resolve() in alvo.parents:
+            return FileResponse(alvo)
+        return FileResponse(config.FRONT_DIR / "index.html", headers={"Cache-Control": "no-cache"})

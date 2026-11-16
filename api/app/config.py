@@ -20,3 +20,7 @@ LLM_MOCK = os.getenv("LLM_MOCK", "0") == "1"
 # Token compartilhado com o robô de RPA (UiPath) para os endpoints de chamados.
 RPA_TOKEN = os.getenv("CL_RPA_TOKEN", "")
 FUSO = "America/Sao_Paulo"
+
+# Front compilado (npm run build). Se existir, a própria API serve o app
+# (deploy em um único serviço, ex.: Render). Em desenvolvimento, o Vite serve.
+FRONT_DIR = Path(os.getenv("CL_FRONT_DIR", API_DIR.parent / "dist"))

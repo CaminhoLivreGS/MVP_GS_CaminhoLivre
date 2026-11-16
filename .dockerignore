@@ -42,3 +42,10 @@ docker-compose*.yml
 .vscode/
 .idea/
 .kiro/
+
+# API e pipeline: estado local e caches
+api/var/
+api/tests/
+**/__pycache__/
+**/.pytest_cache/
+pipeline-dados/

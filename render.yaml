@@ -1,0 +1,20 @@
+# Deploy em 1 clique no Render (plano gratuito): https://render.com/deploy
+# O Render lê este arquivo, constrói o Dockerfile.render e publica um link HTTPS
+# (HTTPS é obrigatório para GPS, câmera e microfone no celular).
+services:
+  - type: web
+    name: caminho-livre
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.render
+    healthCheckPath: /api/saude
+    autoDeploy: true
+    envVars:
+      - key: CL_RPA_TOKEN
+        generateValue: true
+      - key: CL_SAL_DISPOSITIVO
+        generateValue: true
+      - key: OPENROUTER_API_KEY   # opcional: sem ela, o assistente responde por regras
+        sync: false
+      - key: ORS_API_KEY          # opcional (Etapa 2 do plano de acessibilidade)
+        sync: false

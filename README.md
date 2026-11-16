@@ -22,6 +22,21 @@ npm install && npm run deps && npm start   # http://127.0.0.1:8000  (/api vai pa
 npm test && (cd api && python -m pytest -q)
 ```
 
+### Deploy (link público para visualização)
+
+O app inteiro (front + API) roda num container só: `Dockerfile.render`. A API serve o front compilado
+e tudo fica na mesma origem, com HTTPS (obrigatório para GPS, câmera e microfone no celular).
+
+**Render (gratuito, sem cartão):**
+1. Entre em https://render.com com a conta do GitHub.
+2. **New → Blueprint** → escolha o repositório `CaminhoLivreGS/MVP_GS_CaminhoLivre`. O Render lê o `render.yaml`.
+3. (Opcional) preencha `OPENROUTER_API_KEY` para o assistente usar IA; sem ela, responde por regras.
+4. Em ~5 min sai um link `https://caminho-livre-XXXX.onrender.com`. Para a demonstração, use `.../?chuva=nao`.
+
+Plano gratuito: o serviço "dorme" após 15 min sem acesso (o primeiro acesso leva ~50 s) e o banco SQLite
+volta ao estado inicial a cada novo deploy (os relatos de demonstração são recriados).
+Para testar a mesma imagem localmente: `docker build -f Dockerfile.render -t caminho-livre . && docker run -p 8090:8090 caminho-livre`.
+
 Demo reproduzível: `http://127.0.0.1:8000/?chuva=nao` (ou `?chuva=simular`). Fora do território, o app usa a "Casa" de
 demonstração e oferece **caminhada simulada**. Pendências e contratos de integração: [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md).
 
