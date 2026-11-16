@@ -42,6 +42,7 @@ services:
         limits:
           cpus: "1.0"
           memory: 256M
+    depends_on: [api]
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
       interval: 30s
@@ -49,6 +50,31 @@ services:
       retries: 3
       start_period: 10s
     networks: [frontend, monitoring]
+
+  # ---------------------------------------------------------------------------
+  # API: rotas, lugares, relatos, clima e assistente de IA (FastAPI non-root)
+  # ---------------------------------------------------------------------------
+  api:
+    <<: *hardening
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    image: caminho-livre-api:local
+    container_name: caminho-livre-api
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    volumes:
+      - api-data:/data                # SQLite dos relatos + fotos anonimizadas
+    env_file:
+      - path: ./api/.env
+        required: false
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
+    networks: [frontend, monitoring]  # sem porta publicada: só o nginx acessa
 
   # ---------------------------------------------------------------------------
   # Observabilidade (profile opcional)
@@ -111,5 +137,6 @@ networks:
     internal: true                  # stub_status e exporter sem saída para a internet
 
 volumes:
+  api-data:
   prometheus-data:
   grafana-data:

@@ -1,0 +1,11 @@
+{
+  "name": "Caminho Livre",
+  "short_name": "Caminho Livre",
+  "description": "A rota a pé mais segura para o seu jeito de andar.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f1ea",
+  "theme_color": "#f4f1ea",
+  "icons": [{ "src": "/icone.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

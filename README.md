@@ -1,8 +1,44 @@
 # Caminho Livre
 
+**"Waze para pedestres":** a rota a pé mais segura para o seu jeito de andar (bengala, cadeira de rodas, baixa visão), com voz,
+avisos da comunidade e visão computacional. Território do piloto: **Vila Yara e Centro de Osasco (SP)**.
+
+## MVP integrado (front React + API + dados)
+
+```
+pipeline-dados/ ──(gold: grafo, lugares)──► api/ (FastAPI) ◄──/api── front React (Vite) ── src/vision (OpenCV.js)
+                                                  │  roteamento por perfil · relatos · clima · assistente IA · RPA
+                                                  └─ OpenRouter (opcional) · Open-Meteo
+```
+
+```sh
+# 1) API (Python 3.12)
+cd api && python3.12 -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt
+cp .env.example .env              # opcional: OPENROUTER_API_KEY, CL_RPA_TOKEN
+uvicorn app.main:app --port 8090  # docs em http://127.0.0.1:8090/api/docs
+# 2) Front (outro terminal, na raiz)
+npm install && npm run deps && npm start   # http://127.0.0.1:8000  (/api vai para a 8090)
+# Testes
+npm test && (cd api && python -m pytest -q)
+```
+
+Demo reproduzível: `http://127.0.0.1:8000/?chuva=nao` (ou `?chuva=simular`). Fora do território, o app usa a "Casa" de
+demonstração e oferece **caminhada simulada**. Pendências e contratos de integração: [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md).
+
+| Pasta | O quê |
+|---|---|
+| `src/app/` | Telas do guia visual (React), serviços de voz, API e preferências |
+| `src/localizacao/` | Sistema de localização: `geo.js`, `fontes.js` (GPS/simulada), `MotorNavegacao.js` |
+| `src/vision/` | Visão computacional (OpenCV.js) e LGPD — detalhes abaixo |
+| `api/` | FastAPI: `roteamento.py` (A* por perfil), `relatos.py`, `assistente.py`, `clima.py` |
+
+---
+
+## Módulo de visão computacional
+
 Aplicação CitizenTech de acessibilidade urbana: o cidadão fotografa um problema na calçada, informa o tipo, e um módulo de **visão computacional clássica (OpenCV.js)** confirma a evidência e **anonimiza rostos e placas (LGPD)** antes de qualquer envio. Tudo roda no navegador; nenhuma foto sai do aparelho sem anonimização.
 
-## Como rodar
+### Como rodar (só a visão)
 
 Requisitos: Node 18+, Python 3 e Google Chrome (só para o teste de precisão).
 

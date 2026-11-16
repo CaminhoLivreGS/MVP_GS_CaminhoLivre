@@ -15,7 +15,9 @@
     "dataset:brasil": "node scripts/gerar-manifesto-brasil.js"
   },
   "dependencies": {
+    "@fontsource/atkinson-hyperlegible": "5.2.6",
     "@techstark/opencv-js": "4.9.0-release.3",
+    "leaflet": "1.9.4",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },

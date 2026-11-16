@@ -45,6 +45,7 @@ env:
   SEMGREP_RULESETS: >-
     --config p/javascript
     --config p/react
+    --config p/python
     --config p/secrets
     --config p/dockerfile
     --config p/nginx
@@ -79,6 +80,17 @@ jobs:
 
       - name: Build de produção
         run: npm run build
+
+      # API (FastAPI): roteamento por perfil, relatos, assistente e RPA.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Testes da API
+        working-directory: api
+        run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q
 
   # ---------------------------------------------------------------------------
   # Segurança 1/3 - Gitleaks: segredos em todo o histórico

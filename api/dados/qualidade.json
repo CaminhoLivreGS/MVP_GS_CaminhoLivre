@@ -1,0 +1,19 @@
+{
+ "nos_total_extraidos": 13723,
+ "nos_maior_componente": 13092,
+ "arestas": 14763,
+ "extensao_km": 374.9,
+ "cobertura_pct": {
+  "superficie": 60.8,
+  "calcada": 14.5,
+  "iluminacao": 24.1,
+  "inclinacao_tag_osm": 0.0
+ },
+ "travessias": 818,
+ "semaforos": 177,
+ "semaforos_sonoros": 0,
+ "escadas_trechos": 42,
+ "nos_zona_alagamento": 2696,
+ "inclinacao_media_pct": 2.65,
+ "trechos_inclinacao_maior_8pct": 328
+}
