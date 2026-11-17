@@ -107,29 +107,62 @@ export const escutaDisponivel = () => Boolean(Reconhecimento);
  * Escuta uma frase. aoParcial(texto) recebe o texto enquanto a pessoa fala.
  * Retorna { pronto: Promise<string>, parar() }.
  */
-export function escutar(aoParcial = () => {}) {
+/**
+ * Escuta o microfone. Com { continuo: true } grava até a pessoa chamar parar(),
+ * mesmo com pausas na fala (o navegador encerra sessões sozinho; reiniciamos).
+ * parar() entrega TUDO o que foi dito, inclusive o trecho ainda não confirmado
+ * pelo reconhecedor, para nada se perder ao apertar "Parar".
+ */
+export function escutar(aoParcial = () => {}, { continuo = false } = {}) {
   if (!Reconhecimento) return { pronto: Promise.reject(new Error('SEM_SUPORTE')), parar() {} };
   calar();
   const r = new Reconhecimento();
   r.lang = 'pt-BR';
   r.interimResults = true;
   r.maxAlternatives = 1;
-  r.continuous = false;
+  r.continuous = continuo;
+  let anterior = ''; // texto de sessões já encerradas pelo navegador
   let final = '';
+  let parcial = '';
+  let paradoPelaPessoa = false;
+  let falhou = null;
+  const juntar = (...partes) => partes.map((p) => p.trim()).filter(Boolean).join(' ');
+  const texto = () => juntar(anterior, final, parcial);
   const pronto = new Promise((resolve, reject) => {
     r.onresult = (ev) => {
-      let parcial = '';
+      final = '';
+      parcial = '';
       for (const res of ev.results) {
-        if (res.isFinal) final = res[0].transcript;
-        else parcial += res[0].transcript;
+        if (res.isFinal) final += ` ${res[0].transcript}`;
+        else parcial += ` ${res[0].transcript}`;
       }
-      aoParcial(final || parcial);
+      aoParcial(texto());
     };
-    r.onerror = (ev) => reject(new Error(ev.error === 'not-allowed' ? 'PERMISSAO_NEGADA' : ev.error === 'no-speech' ? 'SEM_FALA' : 'ERRO'));
-    r.onend = () => (final ? resolve(final.trim()) : reject(new Error('SEM_FALA')));
+    r.onerror = (ev) => {
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') falhou = 'PERMISSAO_NEGADA';
+      else if (continuo && (ev.error === 'no-speech' || ev.error === 'aborted')) return; // pausa: segue gravando
+      else falhou = ev.error === 'no-speech' ? 'SEM_FALA' : 'ERRO';
+    };
+    r.onend = () => {
+      if (continuo && !paradoPelaPessoa && !falhou) {
+        anterior = texto();
+        final = '';
+        parcial = '';
+        try { r.start(); return; } catch { /* não reiniciou: entrega o que tem */ }
+      }
+      const t = texto();
+      if (t) resolve(t);
+      else reject(new Error(falhou ?? 'SEM_FALA'));
+    };
   });
   r.start();
-  return { pronto, parar: () => r.stop() };
+  return {
+    pronto,
+    parar: () => {
+      paradoPelaPessoa = true;
+      r.stop();
+    },
+  };
 }
 
 let vibrarAtivo = true;

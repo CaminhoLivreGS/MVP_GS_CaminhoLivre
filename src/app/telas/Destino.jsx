@@ -75,43 +75,66 @@ export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDig
 
 /** Página 5: estou ouvindo. */
 export function Ouvindo({ aoResultado, aoFechar }) {
-  const [parcial, setParcial] = useState('');
+  // gravando: microfone aberto até a pessoa apertar "Parar de gravar".
+  // parado: o texto fica na tela; a pessoa busca ou continua gravando (acrescenta).
+  const [estado, setEstado] = useState('gravando');
+  const [texto, setTexto] = useState('');
   const [erro, setErro] = useState(null);
   const escuta = useRef(null);
-  useEffect(() => {
-    let ativo = true;
-    // pequena pausa para a fala anterior não ser captada pelo microfone
-    const t = setTimeout(() => {
-      escuta.current = escutar((p) => ativo && setParcial(p));
-      escuta.current.pronto.then((txt) => ativo && aoResultado(txt)).catch((e) => {
-        if (!ativo) return;
+  const ativo = useRef(true);
+  const juntar = (a, b) => [a, b].map((x) => (x ?? '').trim()).filter(Boolean).join(' ');
+
+  const gravar = (base = '') => {
+    setErro(null);
+    setEstado('gravando');
+    escuta.current = escutar((p) => ativo.current && setTexto(juntar(base, p)), { continuo: true });
+    escuta.current.pronto
+      .then((t) => {
+        if (!ativo.current) return;
+        setTexto(juntar(base, t));
+        setEstado('parado');
+      })
+      .catch((e) => {
+        if (!ativo.current) return;
+        if (base && e.message === 'SEM_FALA') { setTexto(base); setEstado('parado'); return; }
         const msg = e.message === 'PERMISSAO_NEGADA' ? 'O microfone não foi liberado. Você pode digitar o destino.'
           : e.message === 'SEM_SUPORTE' ? 'Este navegador não ouve. Você pode digitar o destino.'
-            : 'Não ouvi nada. Toque em Falar de novo ou digite.';
+            : 'Não ouvi nada. Toque em Gravar de novo ou digite.';
         setErro(msg);
+        setEstado('parado');
         falar(msg);
       });
-    }, 350);
-    return () => { ativo = false; clearTimeout(t); escuta.current?.parar(); };
+  };
+
+  useEffect(() => {
+    ativo.current = true;
+    // pequena pausa para a fala anterior não ser captada pelo microfone
+    const t = setTimeout(() => gravar(), 350);
+    return () => { ativo.current = false; clearTimeout(t); escuta.current?.parar(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const gravando = estado === 'gravando';
   return (
     <Tela className="tela-ouvindo">
       <div className="cabecalho"><span /><span />
-        <button type="button" className="botao-icone claro" onClick={aoFechar} aria-label="Fechar"><Icone nome="fechar" /></button>
+        <button type="button" className="botao-icone claro" onClick={() => aoFechar()} aria-label="Fechar"><Icone nome="fechar" /></button>
       </div>
-      <Titulo>{erro ? 'Não consegui ouvir' : 'Estou ouvindo…'}</Titulo>
-      {!erro && <div className="onda" aria-hidden="true">{Array.from({ length: 9 }, (_, i) => <i key={i} />)}</div>}
+      <Titulo>{erro ? 'Não consegui ouvir' : gravando ? 'Estou ouvindo…' : 'Confira o que você disse'}</Titulo>
+      {gravando && <div className="onda" aria-hidden="true">{Array.from({ length: 9 }, (_, i) => <i key={i} />)}</div>}
       <div className="voce-disse" aria-live="polite">
-        {erro ? <p>{erro}</p> : <>Você disse<strong>{parcial ? `"${parcial}"` : '…'}</strong></>}
+        {erro ? <p>{erro}</p> : <>Você disse<strong>{texto ? `"${texto}"` : '…'}</strong></>}
       </div>
       <div className="empurra" />
-      {erro ? (
-        <Rodape>
-          <Botao icone="mic" variante="escuro" onClick={() => { setErro(null); setParcial(''); aoFechar('falar'); }}>Falar de novo</Botao>
-          <Botao icone="teclado" variante="secundario" onClick={() => aoFechar('digitar')}>Digitar</Botao>
-        </Rodape>
+      {gravando ? (
+        <Botao icone="pausa" variante="escuro" onClick={() => escuta.current?.parar()}>Parar de gravar</Botao>
       ) : (
-        <Botao icone="mic" variante="escuro" onClick={() => escuta.current?.parar()}>Parar de ouvir</Botao>
+        <Rodape>
+          {texto && <Botao icone="check" variante="escuro" onClick={() => aoResultado(texto)}>Buscar este destino</Botao>}
+          <Botao icone="mic" variante={texto ? 'secundario' : 'escuro'} onClick={() => gravar(texto)}>
+            {texto ? 'Continuar gravando' : 'Gravar de novo'}
+          </Botao>
+          {!texto && <Botao icone="teclado" variante="secundario" onClick={() => aoFechar('digitar')}>Digitar</Botao>}
+        </Rodape>
       )}
     </Tela>
   );
