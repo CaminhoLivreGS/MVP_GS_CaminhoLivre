@@ -31,7 +31,12 @@ const SEM_ENTRADA = new Set(['ponto_onibus', 'parque', 'casa']);
 const comPrazo = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('prazo')), ms))]);
 
 export function App() {
-  const [prefs, setPrefsEstado] = useState(carregar);
+  // A preferência de voz vale ANTES da primeira tela falar (os efeitos dos filhos rodam antes dos do App).
+  const [prefs, setPrefsEstado] = useState(() => {
+    const p = carregar();
+    configurarVoz({ ativa: p.vozAlta, devagar: p.vozDevagar });
+    return p;
+  });
   const [pilha, setPilha] = useState(() => (prefs.onboardingFeito ? (CODIGO_INICIAL ? ['home', 'saindo'] : ['home']) : ['boas_vindas']));
   const [saidaInicial] = useState(CODIGO_INICIAL);
   const [locaisPerto, setLocaisPerto] = useState([]);
@@ -157,13 +162,14 @@ export function App() {
     api.locaisPerto(origem.lat, origem.lon).then((r) => setLocaisPerto(r.locais)).catch(() => setLocaisPerto([]));
   }, [origem]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const buscarDestino = useCallback(async (texto) => {
-    ir('destino');
-    setBusca({ carregando: true });
+  // naMesmaTela: nova busca a partir da própria tela de destino (não empilha outra).
+  const buscarDestino = useCallback(async (texto, { naMesmaTela = false } = {}) => {
+    if (!naMesmaTela) ir('destino');
+    setBusca({ carregando: true, consulta: texto });
     try {
-      setBusca({ carregando: false, resultado: await api.destino(texto, origem) });
+      setBusca({ carregando: false, consulta: texto, resultado: await api.destino(texto, origem) });
     } catch (e) {
-      setBusca({ carregando: false, erro: e.message });
+      setBusca({ carregando: false, consulta: texto, erro: e.message });
     }
   }, [ir, origem]);
 
@@ -252,6 +258,7 @@ export function App() {
       break;
     case 'destino':
       conteudo = <ConfirmarDestino {...busca} aoVoltar={voltar} aoNao={() => { voltar(); ir('ouvindo'); }}
+        aoBuscar={(t) => buscarDestino(t, { naMesmaTela: true })}
         aoSim={(c) => { setPilha((p) => p.slice(0, -1)); calcularRota(c); }} />;
       break;
     case 'rota':

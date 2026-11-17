@@ -142,7 +142,7 @@ export function Ajuda({ aoVoltar }) {
     try {
       const r = await api.ajuda(q);
       setResp(r);
-      falar(r.resposta, { forcar: true });
+      falar(r.resposta);
     } catch (e) {
       setResp({ resposta: e.message });
     } finally {

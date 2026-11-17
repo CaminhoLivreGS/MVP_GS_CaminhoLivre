@@ -89,6 +89,7 @@ export async function falar(texto, { forcar = false, interromper = true } = {}) 
       const limite = setTimeout(resolve, 4000 + frase.length * 120); // alguns navegadores não disparam onend
       u.onend = () => { clearTimeout(limite); resolve(); };
       u.onerror = u.onend;
+      if (minha !== geracao || (!config.ativa && !forcar)) { clearTimeout(limite); resolve(); return; }
       speechSynthesis.speak(u);
     });
   }

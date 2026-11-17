@@ -409,13 +409,14 @@ h2 { font-size: calc(1.3rem * var(--escala)); font-weight: 700; }
 .instrucao-topo .botao-som { margin-left: auto; align-self: flex-start; }
 
 /* ---------- Moldura de Samsung Galaxy S24 Ultra (computador / tablet) ----------
-   Celular de verdade (< 600 px): a moldura some e o app é tela cheia.
+   Celular de verdade (< 600 px, ou deitado com < 600 px de altura): a moldura some e o app é tela cheia.
    Tela larga: S24 Ultra (viewport 384 x 824), moldura de titânio, câmera
    furo, barra de status e barra de gestos do Android. Só a tela rola; o
    aparelho é ajustado com zoom para caber na janela. */
 .celular, .celular-tela { display: contents; }
 .celular-status, .celular-home, .moldura-legenda { display: none; }
-@media (min-width: 600px) {
+/* min-height: celular DEITADO (largo mas baixo) não ganha moldura; usa a tela inteira. */
+@media (min-width: 600px) and (min-height: 600px) {
   :root { --largura-tela: 412px; --altura-tela: 856px; }
   html, body { height: 100%; }
   body { background: radial-gradient(circle at 50% 35%, #ece8df, #cdc6b8); display: flex; flex-direction: column; align-items: center;
@@ -671,3 +672,50 @@ section > h2 { margin: 18px 0 10px; }
 .nav-passos li em { font-style: normal; font-weight: 700; color: var(--texto-2); white-space: nowrap; }
 /* Atribuição (licença MapTiler/OSM) visível logo acima da barra inferior. */
 .mapa-cheia .leaflet-bottom.leaflet-right { bottom: 88px; }
+
+/* ---------- Responsivo: celulares pequenos, baixos e deitados ---------- */
+.lugares-salvos { grid-template-columns: repeat(auto-fit, minmax(88px, 1fr)); }
+.lugar-salvo { min-width: 0; }
+.lugar-salvo strong, .lugar-salvo span { overflow-wrap: anywhere; }
+.preferencia-texto { min-width: 0; }
+img, video, canvas, svg { max-width: 100%; }
+
+/* Largura até 380 px (iPhone SE, Galaxy A0x, Motorola E): menos respiro, letra um pouco menor. */
+@media (max-width: 380px) {
+  .tela { padding-left: 14px; padding-right: 14px; gap: 14px; }
+  h1 { font-size: calc(1.75rem * var(--escala)); }
+  .pergunta-central h1 { font-size: calc(1.8rem * var(--escala)); }
+  .caixa-fala-titulo { font-size: calc(1.3rem * var(--escala)); }
+  .botao { font-size: calc(1.15rem * var(--escala)); }
+  .preferencia { padding: 14px; gap: 10px; }
+  .preferencia .icone { width: 30px; height: 30px; }
+  .preferencia-texto strong { font-size: calc(1.1rem * var(--escala)); }
+  .preferencia-texto span { font-size: 0.9em; }
+  .lugares-salvos { gap: 8px; }
+  .lugar-salvo { padding: 12px 4px; min-height: 100px; }
+  .lugar-salvo .icone { width: 32px; height: 32px; }
+  .lugar-salvo strong { font-size: calc(1rem * var(--escala)); }
+  .lugar-salvo span { font-size: calc(0.85rem * var(--escala)); }
+  .voce-disse { padding: 18px; border-radius: 24px; }
+  .voce-disse strong { font-size: calc(1.8rem * var(--escala)); }
+  .digitar .botao { padding: 0 14px; }
+  .grade-opcoes .opcao { font-size: calc(1rem * var(--escala)); }
+}
+
+/* Altura até 700 px (celulares baixos e deitados): elementos grandes encolhem para caber. */
+@media (max-height: 700px) {
+  .onda { height: 110px; }
+  .voce-disse { min-height: 96px; }
+  .alerta-icone { width: 120px; height: 120px; border-radius: 32px; }
+  .botao-obturador { width: 80px; height: 80px; }
+  .mapa-media { height: 220px; }
+  .mapa-grande { min-height: 220px; }
+  .circulo-ok { width: 80px; height: 80px; }
+}
+
+/* Celular deitado: conteúdo centralizado, sem esticar demais. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .app { max-width: 640px; }
+  .area-flex { min-height: 90px; }
+  .mapa-grande { height: 60vh; min-height: 180px; }
+}

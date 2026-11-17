@@ -73,11 +73,24 @@ export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDig
   );
 }
 
+/** Campo para digitar o destino (usado quando a voz falha ou a pessoa prefere escrever). */
+export function BuscaDigitada({ inicial = '', aoBuscar, rotulo = 'Buscar' }) {
+  const [texto, setTexto] = useState(inicial);
+  return (
+    <form className="digitar" onSubmit={(e) => { e.preventDefault(); if (texto.trim()) aoBuscar(texto.trim()); }}>
+      <label htmlFor="campo-busca" className="so-leitor">Para onde você quer ir</label>
+      <input id="campo-busca" value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ex.: posto de saúde"
+        autoComplete="off" enterKeyHint="search" autoFocus />
+      <button type="submit" className="botao primario" aria-label={rotulo} disabled={!texto.trim()}><span>Ir</span></button>
+    </form>
+  );
+}
+
 /** Página 5: estou ouvindo. */
 export function Ouvindo({ aoResultado, aoFechar }) {
   // gravando: microfone aberto até a pessoa apertar "Parar de gravar".
   // parado: o texto fica na tela; a pessoa busca ou continua gravando (acrescenta).
-  const [estado, setEstado] = useState('gravando');
+  const [estado, setEstado] = useState('gravando'); // gravando | parado | digitando
   const [texto, setTexto] = useState('');
   const [erro, setErro] = useState(null);
   const escuta = useRef(null);
@@ -114,6 +127,20 @@ export function Ouvindo({ aoResultado, aoFechar }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const gravando = estado === 'gravando';
+  const digitar = () => { escuta.current?.parar(); setErro(null); setEstado('digitando'); };
+  if (estado === 'digitando') {
+    return (
+      <Tela className="tela-ouvindo" fala="Digite para onde você quer ir.">
+        <div className="cabecalho"><span /><span />
+          <button type="button" className="botao-icone claro" onClick={() => aoFechar()} aria-label="Fechar"><Icone nome="fechar" /></button>
+        </div>
+        <Titulo>Para onde você quer ir?</Titulo>
+        <BuscaDigitada inicial={texto} aoBuscar={aoResultado} />
+        <div className="empurra" />
+        <Botao icone="mic" variante="secundario" onClick={() => gravar('')}>Prefiro falar</Botao>
+      </Tela>
+    );
+  }
   return (
     <Tela className="tela-ouvindo">
       <div className="cabecalho"><span /><span />
@@ -133,7 +160,7 @@ export function Ouvindo({ aoResultado, aoFechar }) {
           <Botao icone="mic" variante={texto ? 'secundario' : 'escuro'} onClick={() => gravar(texto)}>
             {texto ? 'Continuar gravando' : 'Gravar de novo'}
           </Botao>
-          {!texto && <Botao icone="teclado" variante="secundario" onClick={() => aoFechar('digitar')}>Digitar</Botao>}
+          <Botao icone="teclado" variante="secundario" onClick={digitar}>{texto ? 'Corrigir digitando' : 'Digitar'}</Botao>
         </Rodape>
       )}
     </Tela>
@@ -141,8 +168,9 @@ export function Ouvindo({ aoResultado, aoFechar }) {
 }
 
 /** Página 6: confirmar destino. */
-export function ConfirmarDestino({ resultado, carregando, erro, aoSim, aoNao, aoVoltar }) {
+export function ConfirmarDestino({ resultado, carregando, erro, consulta, aoSim, aoNao, aoVoltar, aoBuscar }) {
   const [indice, setIndice] = useState(0);
+  useEffect(() => setIndice(0), [resultado]);
   if (carregando) {
     return (
       <Tela fala="Procurando o lugar.">
@@ -157,8 +185,9 @@ export function ConfirmarDestino({ resultado, carregando, erro, aoSim, aoNao, ao
         <Cabecalho titulo="Destino" aoVoltar={aoVoltar} fala={erro} />
         <Titulo>Não consegui buscar</Titulo>
         <Aviso tipo="erro">{erro}</Aviso>
+        {aoBuscar && <BuscaDigitada key={consulta} inicial={consulta} aoBuscar={aoBuscar} rotulo="Tentar de novo" />}
         <div className="empurra" />
-        <Botao icone="mic" variante="secundario" onClick={aoNao}>Tentar de novo</Botao>
+        <Botao icone="mic" variante="secundario" onClick={aoNao}>Falar de novo</Botao>
       </Tela>
     );
   }
@@ -175,10 +204,13 @@ export function ConfirmarDestino({ resultado, carregando, erro, aoSim, aoNao, ao
   }
   const c = resultado.candidatos[indice];
   if (!c) {
+    const naoAchei = consulta ? `Não encontrei "${consulta}" aqui perto.` : 'Não encontrei esse lugar aqui perto.';
     return (
-      <Tela fala={resultado.fala}>
-        <Cabecalho titulo="Destino" aoVoltar={aoVoltar} fala={resultado.fala} />
-        <CaixaFala titulo={<Titulo>{resultado.fala}</Titulo>}>Fale o nome do lugar e do bairro, por exemplo "UBS Santa Maria Goretti".</CaixaFala>
+      <Tela fala={`${naoAchei} Digite outro nome ou fale de novo.`} key={consulta}>
+        <Cabecalho titulo="Destino" aoVoltar={aoVoltar} fala={naoAchei} />
+        <Titulo>Não encontrei esse lugar</Titulo>
+        <Aviso tipo="erro" icone="lugar">{naoAchei} Tente o nome com o bairro, por exemplo "UBS Santa Maria Goretti", ou um tipo de lugar, como "farmácia".</Aviso>
+        {aoBuscar && <BuscaDigitada key={consulta} inicial={consulta} aoBuscar={aoBuscar} />}
         <div className="empurra" />
         <Botao icone="mic" variante="secundario" onClick={aoNao}>Falar de novo</Botao>
       </Tela>
@@ -190,7 +222,9 @@ export function ConfirmarDestino({ resultado, carregando, erro, aoSim, aoNao, ao
   return (
     <Tela fala={fala} key={indice}>
       <Cabecalho titulo="Destino" aoVoltar={aoVoltar} fala={fala} />
-      <CaixaFala titulo={<Titulo>{c.nome.length > 34 ? `Encontrei este lugar${distTxt}. Quer ir para lá?` : fala}</Titulo>} />
+      <CaixaFala titulo={<Titulo>{c.nome.length > 34 ? `Encontrei este lugar${distTxt}. Quer ir para lá?` : fala}</Titulo>}>
+        {consulta && <span className="nota">Você buscou: "{consulta}"</span>}
+      </CaixaFala>
       <div className="cartao">
         <Mapa coords={[]} marcadores={[{ lat: c.lat, lon: c.lon, tipo: 'destino' }]} altura="pequena"
           rotulo={`Mapa com ${c.nome}`} />

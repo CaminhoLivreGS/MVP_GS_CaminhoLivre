@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { AvisoSemVoz, Botao, Cabecalho, CaixaFala, Progresso, Rodape, Tela, Titulo, BotaoSom, VozContexto } from '../componentes/base.jsx';
 import { useContext } from 'react';
 import { Icone, Marca } from '../componentes/Icone.jsx';
-import { falar } from '../servicos/voz.js';
+import { calar, falar } from '../servicos/voz.js';
 
 const EXPLICACAO = 'O Caminho Livre mostra o caminho a pé mais seguro para o seu jeito de andar. '
   + 'Ele desvia de buracos, escadas e calçadas quebradas que os vizinhos avisaram. Eu falo cada passo com você. Não precisa ler nada.';
@@ -41,7 +41,7 @@ function InterruptorSom() {
       <Icone nome={ativa ? 'som' : 'somMudo'} />
       <div className="preferencia-texto"><strong>Falar em voz alta</strong><span>{ativa ? 'Ligado: eu leio cada tela' : 'Desligado: só texto e vibração'}</span></div>
       <button type="button" role="switch" aria-checked={ativa} aria-label="Falar em voz alta" className="chave"
-        onClick={() => { alternar(!ativa); if (!ativa) falar('Som ligado.', { forcar: true }); }} />
+        onClick={() => { if (ativa) calar(); alternar(!ativa); if (!ativa) falar('Som ligado.', { forcar: true }); }} />
     </div>
   );
 }
@@ -96,7 +96,11 @@ export function Preferencias({ prefs, aoMudar, aoVoltar, aoContinuar, passo = 2,
     <div className="preferencia">
       <Icone nome={icone} />
       <div className="preferencia-texto"><strong>{titulo}</strong><span>{sub}</span></div>
-      <Chave ligada={prefs[chave]} rotulo={titulo} aoMudar={(v) => { aoMudar({ [chave]: v }); falar(`${titulo}: ${v ? 'ligado' : 'desligado'}.`, { forcar: chave === 'vozAlta' && v }); }} />
+      <Chave ligada={prefs[chave]} rotulo={titulo} aoMudar={(v) => {
+        if (chave === 'vozAlta' && !v) calar(); // desligou a voz: silêncio na hora, sem anunciar
+        aoMudar({ [chave]: v });
+        if (chave !== 'vozAlta' || v) falar(`${titulo}: ${v ? 'ligado' : 'desligado'}.`, { forcar: chave === 'vozAlta' });
+      }} />
     </div>
   );
   return (
