@@ -3,18 +3,53 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 /**
- * Mapa real (ruas e nomes do OpenStreetMap, tiles da CARTO), como no Waze /
- * Google Maps, com os elementos do guia visual por cima: rota verde, rota
+ * Mapa real dentro do app (ruas e nomes do OpenStreetMap, desenhados pela
+ * MapTiler), com os elementos do guia visual por cima: rota verde, rota
  * mais curta evitada (tracejado laranja), "!" nos problemas, você em amarelo.
  *
  * modo 'visao': enquadra rota e marcadores. modo 'seguir': acompanha a pessoa.
  * O mapa é complemento: toda informação dele também está em texto e voz.
  */
-// Tiles padrão do OpenStreetMap (uso leve, com atribuição). O tema escuro é
-// feito por filtro CSS. TODO: integrar um provedor de tiles com SLA/chave
-// (MapTiler, Stadia ou servidor próprio) antes de abrir ao público.
-const TILES = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const ATRIBUICAO = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+// Provedor principal: MapTiler (chave pública de navegador em VITE_MAPTILER_KEY,
+// restrita por domínio no painel da MapTiler). Tiles 512 px com versão @2x em
+// tela retina; estilo escuro nos temas Escuro e Contraste.
+// Reserva: tiles públicos do OpenStreetMap, usados sem chave ou se a MapTiler
+// falhar (cota estourada, domínio não liberado, fora do ar).
+const CHAVE_MAPTILER = (import.meta.env?.VITE_MAPTILER_KEY ?? '').trim();
+const ESTILO_MAPTILER = { claro: 'base-v4', escuro: 'base-v4-dark', contraste: 'base-v4-dark' };
+const ATRIBUICAO_OSM = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
+const ATRIBUICAO_MAPTILER = '<a href="https://www.maptiler.com/copyright/">© MapTiler</a> '
+  + '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors</a>';
+const FALHAS_PARA_RESERVA = 4; // tiles com erro antes de o primeiro carregar
+let maptilerFalhou = false;    // vale para todos os mapas da sessão
+
+function camadaOsm() {
+  return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: ATRIBUICAO_OSM, className: 'tiles-osm' });
+}
+
+function camadaMapTiler(tema) {
+  const estilo = ESTILO_MAPTILER[tema] ?? ESTILO_MAPTILER.claro;
+  return L.tileLayer(`https://api.maptiler.com/maps/${estilo}/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(CHAVE_MAPTILER)}`, {
+    tileSize: 512, zoomOffset: -1, minZoom: 1, maxZoom: 19, crossOrigin: true, attribution: ATRIBUICAO_MAPTILER, className: 'tiles-maptiler',
+  });
+}
+
+/** Põe a camada de ruas no mapa; se a MapTiler falhar, troca sozinho para o OSM. */
+function camadaRuas(m, tema) {
+  if (!CHAVE_MAPTILER || maptilerFalhou) return camadaOsm().addTo(m);
+  const camada = camadaMapTiler(tema);
+  let carregou = false;
+  let falhas = 0;
+  camada.on('tileload', () => { carregou = true; });
+  camada.on('tileerror', () => {
+    if (carregou || ++falhas < FALHAS_PARA_RESERVA) return;
+    maptilerFalhou = true;
+    console.warn('[mapa] MapTiler indisponível; usando tiles do OpenStreetMap.');
+    camada.remove();
+    if (m._caminhoLivreRuas === camada) m._caminhoLivreRuas = camadaOsm().addTo(m);
+  });
+  return camada.addTo(m);
+}
 
 const icone = (classe, html = '') => L.divIcon({ className: '', html: `<span class="${classe}">${html}</span>`, iconSize: [0, 0] });
 const ICONES = {
@@ -23,8 +58,15 @@ const ICONES = {
   perigo: icone('pin-perigo', '!'),
 };
 
-export function Mapa({ coords = [], comum = null, marcadores = [], posicao = null, modo = 'visao', rotulo, altura = 'media', zoomSeguir = 18 }) {
+// focoAcima: no modo 'seguir', desloca a pessoa do centro (fração da altura; negativo = mais
+// abaixo), para não ficar escondida atrás do que flutua sobre o mapa.
+// aoSoltar: a pessoa arrastou o mapa (para de seguir). recentrar: mude o número para voltar a seguir.
+export function Mapa({ coords = [], comum = null, marcadores = [], posicao = null, modo = 'visao', rotulo, altura = 'media',
+  zoomSeguir = 18, focoAcima = 0, aoSoltar, recentrar = 0 }) {
   const div = useRef(null);
+  const livre = useRef(false);
+  const ultimo = useRef({ modo, aoSoltar, posicao });
+  ultimo.current = { modo, aoSoltar, posicao };
   const mapa = useRef(null);
   const camadas = useRef(null);
   const tiles = useRef(null);
@@ -38,6 +80,11 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
     });
     m.attributionControl.setPrefix(false);
     m.setView([-23.55, -46.7], 14); // vista inicial: camadas de linha exigem centro e zoom definidos
+    m.on('dragstart', () => {
+      if (ultimo.current.modo !== 'seguir' || livre.current) return;
+      livre.current = true;
+      ultimo.current.aoSoltar?.();
+    });
     camadas.current = L.layerGroup().addTo(m);
     mapa.current = m;
     const ro = new ResizeObserver(() => m.invalidateSize());
@@ -50,8 +97,9 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
   useEffect(() => {
     const m = mapa.current;
     if (!m) return;
-    tiles.current?.remove();
-    tiles.current = L.tileLayer(TILES, { maxZoom: 19, attribution: ATRIBUICAO, className: `tiles-${tema}` }).addTo(m);
+    (m._caminhoLivreRuas ?? tiles.current)?.remove();
+    m._caminhoLivreRuas = camadaRuas(m, tema);
+    tiles.current = m._caminhoLivreRuas;
   }, [tema]);
 
   // rota, marcadores e enquadramento
@@ -83,7 +131,12 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
       else voce.current.setLatLng([posicao.lat, posicao.lon]);
     }
     if (modo === 'seguir' && posicao) {
-      m.setView([posicao.lat, posicao.lon], enquadrado.current ? m.getZoom() : zoomSeguir, { animate: enquadrado.current });
+      if (livre.current) return; // a pessoa está olhando o mapa: não puxa de volta
+      const z = enquadrado.current ? m.getZoom() : zoomSeguir;
+      const alvo = focoAcima
+        ? m.unproject(m.project([posicao.lat, posicao.lon], z).add([0, m.getSize().y * focoAcima]), z)
+        : [posicao.lat, posicao.lon];
+      m.setView(alvo, z, { animate: enquadrado.current });
       enquadrado.current = true;
       return;
     }
@@ -93,6 +146,18 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
     else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { padding: [28, 28], maxZoom: 17 });
     enquadrado.current = pts.length > 0;
   }, [posicao?.lat, posicao?.lon, modo, chaveRota]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Recentralizar: volta a seguir a pessoa no zoom de navegação.
+  useEffect(() => {
+    const m = mapa.current;
+    const p = ultimo.current.posicao;
+    if (!recentrar || !m) return;
+    livre.current = false;
+    if (p) {
+      const alvo = focoAcima ? m.unproject(m.project([p.lat, p.lon], zoomSeguir).add([0, m.getSize().y * focoAcima]), zoomSeguir) : [p.lat, p.lon];
+      m.setView(alvo, zoomSeguir, { animate: true });
+    }
+  }, [recentrar]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className={`mapa mapa-${altura}`} role="img" aria-label={rotulo ?? 'Mapa do caminho'}>

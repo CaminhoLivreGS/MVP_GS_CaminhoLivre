@@ -1,0 +1,45 @@
+{
+  "versao": 1,
+  "observacao": "Entradas e pontos internos de EXEMPLO (fonte=exemplo) posicionados nas bordas reais do prédio (contorno do OSM, way 152906280). Substituir pelo levantamento em campo (fonte=levantamento_equipe) ou pelo cadastro do estabelecimento (fonte=estabelecimento).",
+  "locais": [
+    {
+      "id": "shopping-uniao-osasco",
+      "nome": "Shopping União de Osasco",
+      "apelidos": ["shopping uniao", "uniao", "shopping osasco", "shopping uniao de osasco"],
+      "lat": -23.5389781,
+      "lon": -46.7653358,
+      "raio_m": 350,
+      "endereco": "Avenida dos Autonomistas, 1400, Osasco",
+      "osm": "way/152906280",
+      "fonte": "exemplo",
+      "entradas": [
+        {"id": "principal", "nome": "Entrada principal (Av. dos Autonomistas)", "tipo": "principal",
+         "lat": -23.53623, "lon": -46.76545, "degraus": 5, "rampa": false, "elevador": false,
+         "porta": "automatica", "largura_m": 2.0, "piso_tatil": true, "coberta": true,
+         "horario": "Mo-Sa 10:00-22:00; Su,PH 14:00-20:00", "fonte": "exemplo"},
+        {"id": "lateral-leste", "nome": "Entrada lateral leste (rampa)", "tipo": "lateral",
+         "lat": -23.53690, "lon": -46.76456, "degraus": 0, "rampa": true, "elevador": false,
+         "porta": "automatica", "largura_m": 1.6, "piso_tatil": false, "coberta": false,
+         "horario": "Mo-Sa 10:00-22:00; Su,PH 14:00-20:00", "fonte": "exemplo"},
+        {"id": "estacionamento-sul", "nome": "Entrada do estacionamento sul (elevador)", "tipo": "estacionamento",
+         "lat": -23.54162, "lon": -46.76513, "degraus": 0, "rampa": false, "elevador": true,
+         "porta": "automatica", "largura_m": 1.2, "piso_tatil": false, "coberta": true,
+         "horario": "Mo-Su 08:00-23:00", "fonte": "exemplo"},
+        {"id": "oeste-pedestres", "nome": "Entrada oeste de pedestres", "tipo": "lateral",
+         "lat": -23.54100, "lon": -46.76641, "degraus": 0, "rampa": false, "elevador": false,
+         "porta": "giratoria", "largura_m": 0.7, "piso_tatil": false, "coberta": false,
+         "horario": "Mo-Sa 10:00-22:00", "fonte": "exemplo"}
+      ],
+      "pontos_internos": [
+        {"id": "praca-alimentacao", "nome": "Praça de alimentação", "apelidos": ["praca de alimentacao", "alimentacao", "comida", "lanchonete", "restaurante", "food"],
+         "saidas_m": {"principal": 120, "lateral-leste": 200, "estacionamento-sul": 260, "oeste-pedestres": 180}},
+        {"id": "cinema", "nome": "Cinema", "apelidos": ["cinema", "filme"],
+         "saidas_m": {"principal": 220, "lateral-leste": 150, "estacionamento-sul": 300, "oeste-pedestres": 240}},
+        {"id": "banheiro-acessivel", "nome": "Banheiro acessível (térreo)", "apelidos": ["banheiro", "sanitario", "toalete"],
+         "saidas_m": {"principal": 90, "lateral-leste": 110, "estacionamento-sul": 160, "oeste-pedestres": 140}},
+        {"id": "hipermercado", "nome": "Hipermercado", "apelidos": ["mercado", "supermercado", "hipermercado"],
+         "saidas_m": {"principal": 260, "lateral-leste": 280, "estacionamento-sul": 80, "oeste-pedestres": 200}}
+      ]
+    }
+  ]
+}

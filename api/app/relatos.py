@@ -21,7 +21,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-CATEGORIAS = ("buraco", "calcada_irregular", "obstaculo", "sem_rampa", "alagamento", "luz_apagada", "obra", "outro")
+CATEGORIAS = ("buraco", "calcada_irregular", "obstaculo", "sem_rampa", "alagamento", "luz_apagada", "obra", "outro", "entrada")
+# "entrada" descreve a entrada de um lugar (degrau, rampa, porta): alimenta a escolha de
+# entradas, não pesa no roteamento das calçadas.
+DETALHES_ENTRADA = {"degrau": bool, "rampa": bool, "porta_automatica": bool, "porta_giratoria": bool}
 CONFIRMACOES_NECESSARIAS = 3
 NEGACOES_DESCARTE = 2
 NEGACOES_RESOLVIDO = 3
@@ -42,7 +45,13 @@ CREATE TABLE IF NOT EXISTS respostas (
   PRIMARY KEY (relato_id, dispositivo)
 );
 CREATE INDEX IF NOT EXISTS idx_relatos_pos ON relatos(lat, lon);
+CREATE TABLE IF NOT EXISTS avaliacoes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, rota_id TEXT, nota TEXT NOT NULL, perfil TEXT, fonte_dados TEXT,
+  criado_em TEXT NOT NULL
+);
 """
+# Colunas adicionadas depois da primeira versão (bancos antigos ganham a coluna sem perder dados).
+MIGRACOES = ("ALTER TABLE relatos ADD COLUMN detalhes TEXT", "ALTER TABLE relatos ADD COLUMN moderacao TEXT")
 
 
 def agora() -> str:
@@ -67,6 +76,11 @@ class Relatos:
         self.lock = threading.Lock()
         with self.lock:
             self.db.executescript(ESQUEMA)
+            for m in MIGRACOES:
+                try:
+                    self.db.execute(m)
+                except sqlite3.OperationalError:
+                    pass  # coluna já existe
             vazio = self.db.execute("SELECT COUNT(*) FROM relatos").fetchone()[0] == 0
         if vazio and seed and Path(seed).exists():
             self._semear(json.loads(Path(seed).read_text(encoding="utf-8"))["relatos"])
@@ -87,6 +101,7 @@ class Relatos:
         d.pop("foto", None)
         d["validacao_visao"] = json.loads(d["validacao_visao"]) if d.get("validacao_visao") else None
         d["chamado"] = json.loads(d["chamado"]) if d.get("chamado") else None
+        d["detalhes"] = json.loads(d["detalhes"]) if d.get("detalhes") else None
         return d
 
     def listar(self, bbox=None, ativos=True) -> list[dict]:
@@ -107,6 +122,8 @@ class Relatos:
         """Visão usada pelo roteamento: encaminhado conta como confirmado."""
         out = []
         for r in self.listar():
+            if r["categoria"] == "entrada":
+                continue
             r = dict(r)
             if r["status"] == "encaminhado":
                 r["status"] = "confirmado"
@@ -119,9 +136,12 @@ class Relatos:
         return self._publico(row) if row else None
 
     def criar(self, *, categoria: str, lat: float, lon: float, rua: str | None, dispositivo: str | None,
-              hash_foto: str | None = None, foto_arquivo: str | None = None, validacao: dict | None = None) -> dict:
+              hash_foto: str | None = None, foto_arquivo: str | None = None, validacao: dict | None = None,
+              detalhes: dict | None = None) -> dict:
         if categoria not in CATEGORIAS:
             raise ErroRelato("categoria inválida")
+        if detalhes is not None:
+            detalhes = {k: bool(v) for k, v in detalhes.items() if k in DETALHES_ENTRADA} or None
         disp = hash_dispositivo(dispositivo)
         desde = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(timespec="seconds")
         with self.lock:
@@ -138,9 +158,13 @@ class Relatos:
             with self.db:
                 self.db.execute(
                     "INSERT INTO relatos (id, categoria, status, confirmacoes, lat, lon, rua, criado_em, atualizado_em,"
-                    " origem, dispositivo, hash_foto, foto, validacao_visao) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " origem, dispositivo, hash_foto, foto, validacao_visao, detalhes, moderacao)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (rid, categoria, "em_verificacao", 1, lat, lon, rua, t, t, "app", disp, hash_foto, foto_arquivo,
-                     json.dumps(validacao, ensure_ascii=False) if validacao else None))
+                     json.dumps(validacao, ensure_ascii=False) if validacao else None,
+                     json.dumps(detalhes, ensure_ascii=False) if detalhes else None,
+                     # a visão não teve certeza: uma pessoa da equipe olha antes de valer
+                     "pendente" if (validacao or {}).get("status") == "INCONCLUSIVO" else None))
                 if disp:
                     self.db.execute("INSERT OR REPLACE INTO respostas VALUES (?,?,?,?)", (rid, disp, "sim", t))
         return self.obter(rid)
@@ -194,8 +218,49 @@ class Relatos:
                     self.db.execute("UPDATE relatos SET novidade_vista=1 WHERE dispositivo=? AND status='resolvido'", (disp,))
         return [self._publico(r) for r in rows]
 
+    # ---- moderação humana: relatos que a visão não conseguiu confirmar ----------
+    def moderacao_pendentes(self) -> list[dict]:
+        with self.lock:
+            rows = self.db.execute("SELECT * FROM relatos WHERE moderacao='pendente' ORDER BY criado_em").fetchall()
+        return [self._publico(r) for r in rows]
+
+    def moderar(self, rid: str, decisao: str) -> dict:
+        if decisao not in ("aprovar", "rejeitar"):
+            raise ErroRelato("decisão inválida")
+        status = "confirmado" if decisao == "aprovar" else "descartado"
+        with self.lock, self.db:
+            cur = self.db.execute("UPDATE relatos SET moderacao=?, status=?, atualizado_em=? WHERE id=? AND moderacao='pendente'",
+                                  ("aprovado" if decisao == "aprovar" else "rejeitado", status, agora(), rid))
+        if cur.rowcount == 0:
+            raise ErroRelato("relato não está na fila de moderação")
+        return self.obter(rid)
+
+    # ---- avaliações da rota (indicador de impacto para o BI) ---------------------
+    def registrar_avaliacao(self, rota_id: str | None, nota: str, perfil: str | None, fonte: str | None) -> None:
+        with self.lock, self.db:
+            self.db.execute("INSERT INTO avaliacoes (rota_id, nota, perfil, fonte_dados, criado_em) VALUES (?,?,?,?,?)",
+                            (rota_id, nota, perfil, fonte, agora()))
+
+    def indicadores(self) -> dict:
+        with self.lock:
+            q = lambda sql: [dict(r) for r in self.db.execute(sql).fetchall()]  # noqa: E731
+            av = q("SELECT nota, COUNT(*) n FROM avaliacoes GROUP BY nota")
+            av_perfil = q("SELECT perfil, nota, COUNT(*) n FROM avaliacoes GROUP BY perfil, nota")
+            por_cat = q("SELECT categoria, COUNT(*) n FROM relatos GROUP BY categoria")
+            por_origem = q("SELECT origem, COUNT(*) n FROM relatos GROUP BY origem")
+            resolvidos = q("SELECT COUNT(*) n, AVG(julianday(resolvido_em) - julianday(criado_em)) dias FROM relatos"
+                           " WHERE status='resolvido' AND resolvido_em IS NOT NULL")[0]
+            fila = self.db.execute("SELECT COUNT(*) FROM relatos WHERE moderacao='pendente'").fetchone()[0]
+        bom = sum(x["n"] for x in av if x["nota"] == "bom")
+        total = sum(x["n"] for x in av)
+        return {"avaliacoes": {"total": total, "bom": bom, "ruim": total - bom,
+                               "satisfacao_pct": round(100 * bom / total, 1) if total else None, "por_perfil": av_perfil},
+                "relatos": {"por_status": self.estatisticas(), "por_categoria": por_cat, "por_origem": por_origem,
+                            "resolvidos": resolvidos["n"],
+                            "dias_medios_ate_resolver": round(resolvidos["dias"], 1) if resolvidos["dias"] else None,
+                            "fila_moderacao": fila}}
+
     # ---- integração com o robô de RPA (UiPath) ---------------------------
-    # TODO: integrar fila de moderação humana para relatos INCONCLUSIVOS da visão (hoje entram como em_verificacao).
     def chamados_pendentes(self) -> list[dict]:
         with self.lock:
             rows = self.db.execute("SELECT * FROM relatos WHERE status='confirmado' AND protocolo IS NULL"

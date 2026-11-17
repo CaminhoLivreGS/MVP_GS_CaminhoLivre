@@ -15,6 +15,7 @@ pipeline-dados/ ──(gold: grafo, lugares)──► api/ (FastAPI) ◄──/a
 # 1) API (Python 3.12)
 cd api && python3.12 -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt
 cp .env.example .env              # opcional: OPENROUTER_API_KEY, CL_RPA_TOKEN
+set -a; . ./.env; set +a          # carrega o .env (a API só lê variáveis de ambiente)
 uvicorn app.main:app --port 8090  # docs em http://127.0.0.1:8090/api/docs
 # 2) Front (outro terminal, na raiz)
 npm install && npm run deps && npm start   # http://127.0.0.1:8000  (/api vai para a 8090)
@@ -46,6 +47,13 @@ demonstração e oferece **caminhada simulada**. Pendências e contratos de inte
 | `src/localizacao/` | Sistema de localização: `geo.js`, `fontes.js` (GPS/simulada), `MotorNavegacao.js` |
 | `src/vision/` | Visão computacional (OpenCV.js) e LGPD — detalhes abaixo |
 | `api/` | FastAPI: `roteamento.py` (A* por perfil), `relatos.py`, `assistente.py`, `clima.py` |
+| `api/app/entradas.py` | Melhor entrada (chegando) e melhor saída (saindo) por perfil: OSM + ORS Matrix + dados do lugar |
+| `api/app/ors.py` | OpenRouteService: rota para cadeira de rodas e matriz de distâncias (chave só no servidor) |
+
+**Demo da entrada e da saída** (Shopping União, dados de exemplo): `http://127.0.0.1:8000/?chuva=nao&hora=15:00` → "shopping união" →
+a rota termina na entrada certa para o perfil. "Estou saindo" (ou o QR code `/?saindo=shopping-uniao-osasco&ponto=cinema`)
+indica a saída até o ponto de ônibus. Chaves e variáveis: `api/.env.example` e `.env.local` (`VITE_MAPTILER_KEY`).
+Segurança: [`docs/SEGURANCA.md`](docs/SEGURANCA.md) · Checklist: [`docs/CHECKLIST_MVP.md`](docs/CHECKLIST_MVP.md).
 
 ---
 

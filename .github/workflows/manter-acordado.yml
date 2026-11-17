@@ -1,0 +1,30 @@
+# Mantém o app acordado no plano gratuito do Render (ele "dorme" após 15 min sem acesso
+# e leva ~1 min para acordar) e registra a disponibilidade a cada 10 min.
+# Configure a URL pública em: Settings > Secrets and variables > Actions > Variables > APP_URL
+# (ex.: https://caminho-livre.onrender.com). Sem APP_URL, o job não roda.
+name: Manter o app acordado
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    if: ${{ vars.APP_URL != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Acessar /api/saude
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$APP_URL/api/saude" || true)
+            if [ "$code" = "200" ]; then echo "App no ar (HTTP 200)"; exit 0; fi
+            echo "Tentativa $i: HTTP $code"; sleep 20
+          done
+          echo "::error::O app não respondeu em $APP_URL/api/saude"
+          exit 1

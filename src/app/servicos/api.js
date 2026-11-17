@@ -58,7 +58,23 @@ export const api = {
   meus: () => chamar('/relatos/meus'),
   novidades: (marcar = false) => chamar(`/novidades${marcar ? '?marcar=true' : ''}`),
   ajuda: (pergunta) => chamar('/assistente/ajuda', { metodo: 'POST', corpo: { pergunta }, timeout: 20000 }),
-  avaliar: (rotaId, nota) => chamar('/avaliacoes', { metodo: 'POST', corpo: { rota_id: rotaId, nota } }),
+  avaliar: (rotaId, nota, extra = {}) => chamar('/avaliacoes', { metodo: 'POST', corpo: { rota_id: rotaId, nota, ...extra } }),
+  // Melhor entrada (chegando) e melhor saída (saindo) de um lugar.
+  entradas: (lugar, origem, perfis, hora) => {
+    const p = new URLSearchParams({ lat: lugar.lat, lon: lugar.lon, origem_lat: origem.lat, origem_lon: origem.lon,
+      perfis: perfis.join(','), nome: lugar.nome ?? '' });
+    if (hora) p.set('hora', hora);
+    return chamar(`/locais/entradas?${p}`, { timeout: 15000 });
+  },
+  saida: ({ localId, ponto, texto, destino, perfis, hora }) => {
+    const p = new URLSearchParams({ local_id: localId, destino_lat: destino.lat, destino_lon: destino.lon, perfis: perfis.join(',') });
+    if (ponto) p.set('ponto', ponto);
+    if (texto) p.set('texto', texto);
+    if (hora) p.set('hora', hora);
+    return chamar(`/locais/saida?${p}`, { timeout: 15000 });
+  },
+  locaisPerto: (lat, lon) => chamar(`/locais?lat=${lat}&lon=${lon}`),
+  local: (id) => chamar(`/locais/${encodeURIComponent(id)}`),
 };
 
 const CHAVE_ROTA = 'caminhoLivre.ultimaRota';

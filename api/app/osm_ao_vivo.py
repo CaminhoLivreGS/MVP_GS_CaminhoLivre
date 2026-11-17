@@ -30,7 +30,7 @@ from .grafo import Grafo, distancia_m
 
 log = logging.getLogger("caminho_livre.osm")
 UA = {"User-Agent": "caminho-livre-mvp/1.0 (projeto academico FIAP; contato via repositorio)"}
-OVERPASS = ["https://overpass-api.de/api/interpreter"]
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter"]
 _overpass_falhou_em = 0.0  # disjuntor: se o Overpass caiu, vai direto ao plano B por 3 min
 PHOTON = "https://photon.komoot.io"
 OSRM_PE = "https://routing.openstreetmap.de/routed-foot/route/v1/foot"
@@ -84,7 +84,7 @@ class IndisponivelOSM(RuntimeError):
 
 def _overpass(consulta: str, timeout=9) -> dict:
     global _overpass_falhou_em
-    chave = hashlib.sha1(consulta.encode()).hexdigest()
+    chave = hashlib.sha1(consulta.encode(), usedforsecurity=False).hexdigest()  # só nome de arquivo de cache
     arq = CACHE_DIR / f"{chave}.json"
     if arq.exists() and time.time() - arq.stat().st_mtime < 24 * 3600:
         return json.loads(arq.read_text(encoding="utf-8"))

@@ -19,6 +19,14 @@ LLM_MOCK = os.getenv("LLM_MOCK", "0") == "1"
 
 # Token compartilhado com o robô de RPA (UiPath) para os endpoints de chamados.
 RPA_TOKEN = os.getenv("CL_RPA_TOKEN", "")
+# Token de administração (moderação e indicadores). Sem ele, usa o do robô.
+ADMIN_TOKEN = os.getenv("CL_ADMIN_TOKEN", "") or RPA_TOKEN
+# Token para ler /metrics por fora da rede interna (ex.: Prometheus apontando para o Render).
+METRICS_TOKEN = os.getenv("CL_METRICS_TOKEN", "")
+
+# OpenRouteService (HeiGIT): rota para cadeira de rodas e matriz de distâncias.
+# Chave só no servidor; sem ela, o app usa as alternativas (grafo próprio/OSRM/estimativa).
+ORS_API_KEY = os.getenv("ORS_API_KEY", "")
 FUSO = "America/Sao_Paulo"
 
 # Front compilado (npm run build). Se existir, a própria API serve o app

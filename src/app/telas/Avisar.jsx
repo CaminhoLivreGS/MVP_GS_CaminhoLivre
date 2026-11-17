@@ -18,7 +18,14 @@ export const TIPOS_AVISO = [
   { id: 'alagamento', icone: 'alagamento', nome: 'Alagamento', falar: 'alagamento' },
   { id: 'sem_rampa', icone: 'semRampa', nome: 'Sem rampa', falar: 'falta de rampa ou degrau' },
   { id: 'luz_apagada', icone: 'luzApagada', nome: 'Luz apagada', falar: 'luz apagada' },
+  { id: 'entrada', icone: 'porta', nome: 'Entrada de lugar', falar: 'como é esta entrada' },
   { id: 'outro', icone: 'outro', nome: 'Outro', falar: 'outro problema' },
+];
+
+/** Perguntas por ícone quando o aviso é sobre a ENTRADA de um lugar (alimenta a escolha de entradas). */
+const PERGUNTAS_ENTRADA = [
+  { id: 'degrau', nome: 'Tem degrau' }, { id: 'rampa', nome: 'Tem rampa' },
+  { id: 'porta_automatica', nome: 'Porta abre sozinha' }, { id: 'porta_giratoria', nome: 'Porta giratória' },
 ];
 
 /** Evidência do pipeline clássico -> categoria sugerida na tela. */
@@ -138,6 +145,7 @@ export function TipoAviso({ foto, posicao, aoEnviado, aoVoltar, aoRefazer }) {
   const [escolha, setEscolha] = useState(null);
   const [mensagem, setMensagem] = useState('');
   const [erro, setErro] = useState(null);
+  const [detalhes, setDetalhes] = useState({});
   const resultado = useRef(null);
   const miniatura = useRef(null);
 
@@ -200,6 +208,7 @@ export function TipoAviso({ foto, posicao, aoEnviado, aoVoltar, aoRefazer }) {
       form.set('categoria', escolha);
       form.set('lat', String(posicao.lat));
       form.set('lon', String(posicao.lon));
+      if (escolha === 'entrada') form.set('detalhes', JSON.stringify(detalhes));
       const r = resultado.current;
       if (r) {
         form.set('hash_foto', r.hash);
@@ -246,6 +255,19 @@ export function TipoAviso({ foto, posicao, aoEnviado, aoVoltar, aoRefazer }) {
               </button>
             ))}
           </div>
+          {escolha === 'entrada' && (
+            <fieldset className="perguntas-entrada">
+              <legend>Como é esta entrada? Toque no que for verdade.</legend>
+              <div className="chips">
+                {PERGUNTAS_ENTRADA.map((q) => (
+                  <button key={q.id} type="button" className="chip" aria-pressed={Boolean(detalhes[q.id])}
+                    onClick={() => setDetalhes((d) => ({ ...d, [q.id]: !d[q.id] }))}>
+                    {detalhes[q.id] && <Icone nome="check" />}{q.nome}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          )}
           {resultado.current && !erro && (
             <div className="miniatura"><canvas ref={miniatura} aria-hidden="true" /><span>Esta é a foto que será enviada. Rostos e placas de carro são borrados automaticamente.</span></div>
           )}

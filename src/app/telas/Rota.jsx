@@ -8,6 +8,7 @@ import { formatarDistancia } from '../../localizacao/geo.js';
 import { api } from '../servicos/api.js';
 import { falar, vibrar, VIBRA } from '../servicos/voz.js';
 import { velocidadePerfil } from '../servicos/preferencias.js';
+import { CartaoEntrada } from './Local.jsx';
 
 export const ICONE_RELATO = {
   buraco: 'buraco', calcada_irregular: 'buraco', obstaculo: 'obstaculo', sem_rampa: 'semRampa',
@@ -26,7 +27,8 @@ export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
   const motivo = rota.falas.motivos_desvio?.[0];
   const semDados = rota.fonte_dados === 'sem_acessibilidade';
   const avisos = [...(rota.falas.motivos_desvio ?? []).slice(1), ...(rota.falas.avisos ?? [])];
-  const fala = [rota.falas.resumo_voz, ...(rota.falas.motivos_desvio ?? []), ...(rota.falas.avisos ?? [])].join(' ');
+  const entrada = rota.entrada;
+  const fala = [entrada?.fala, rota.falas.resumo_voz, ...(rota.falas.motivos_desvio ?? []), ...(rota.falas.avisos ?? [])].filter(Boolean).join(' ');
   const [o, d] = [rota.geometria.coords[0], rota.geometria.coords.at(-1)];
   const linkMapa = `https://www.google.com/maps/dir/?api=1&origin=${o[0]},${o[1]}&destination=${d[0]},${d[1]}&travelmode=walking`;
   const marcadores = [
@@ -49,6 +51,11 @@ export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
         <div className="numero"><strong>{semDados ? '?' : rota.escadas}</strong><span>{rota.escadas === 1 ? 'escada' : 'escadas'}</span></div>
         <div className="numero"><strong>{rota.desvios.length}</strong><span>{rota.desvios.length === 1 ? 'desvio' : 'desvios'}</span></div>
       </div>
+      {entrada?.escolhida && (
+        <CartaoEntrada entrada={entrada.escolhida} dadosExemplo={entrada.dados_exemplo} fechado={entrada.fechado_agora}
+          descartadas={entrada.descartadas} />
+      )}
+      {rota.fonte_dados === 'ors' && <p className="nota">Caminho calculado pelo OpenRouteService (evita escadas).</p>}
       <CaixaFala titulo={motivo ?? `São ${formatarDistancia(rota.distancia_m)} a pé.`}>
         {sub}
         {avisos.length > 0 && (
@@ -89,6 +96,9 @@ export function Navegacao({ rotaInicial, prefs, simular, emSegundoPlano = false,
   const [erroGps, setErroGps] = useState(null);
   const [usarSim, setUsarSim] = useState(simular);
   const [sim, setSim] = useState({ pausado: false, mult: 4, fora: false });
+  const [verTodos, setVerTodos] = useState(false);
+  const [solto, setSolto] = useState(false);
+  const [recentrar, setRecentrar] = useState(0);
   const motor = useRef(null);
   const fonte = useRef(null);
   const inicio = useRef(Date.now());
@@ -137,7 +147,8 @@ export function Navegacao({ rotaInicial, prefs, simular, emSegundoPlano = false,
         } else if (ev.tipo === 'chegada') {
           vibrar(VIBRA.chegada);
           fonte.current?.parar();
-          aoChegar({ destino: rota.destino, minutos: Math.max(1, Math.round((Date.now() - inicio.current) / 60000)), evitados, rotaId: rota.id });
+          aoChegar({ destino: rota.destino, minutos: Math.max(1, Math.round((Date.now() - inicio.current) / 60000)), evitados, rotaId: rota.id,
+            posicao: { lat: rota.destino.lat, lon: rota.destino.lon }, fonte: rota.fonte_dados });
         }
       }
     };
@@ -190,51 +201,95 @@ export function Navegacao({ rotaInicial, prefs, simular, emSegundoPlano = false,
   const textoPrincipal = e.foraDaRota ? 'Você saiu do caminho. Estou calculando de novo.' : prox?.fala;
   const marcadores = rota.alertas_no_caminho.map((a) => ({ id: a.id, lat: a.lat, lon: a.lon, tipo: 'perigo' }));
 
+  const feito = e.s ?? 0;
+  const seguintes = rota.manobras.filter((m) => prox && m.acumulado_m > prox.acumulado_m + 1);
+  const depois = seguintes[0];
+  const posAtual = e.posicao ? (e.foraDaRota ? e.posicao : e.posicaoNaRota) : null;
+
   return (
-    <main className="tela" hidden={emSegundoPlano} aria-label="Navegação">
-      <section className="instrucao" aria-live="polite">
-        <div className="instrucao-topo">
-          <span className="instrucao-seta"><Icone nome={ICONE_MANOBRA[prox?.tipo] ?? 'setaCima'} /></span>
-          <div>
-            <h1 tabIndex={-1} className="instrucao-dist">{formatarDistancia(e.distanciaProxima)}</h1>
-            <p className="instrucao-depois">{DEPOIS[prox?.tipo] ?? ''}</p>
+    <main className="tela tela-navegacao" hidden={emSegundoPlano} aria-label="Navegação">
+      <div className="nav-mapa">
+        <Mapa coords={rota.geometria.coords} marcadores={marcadores} posicao={posAtual} modo="seguir" altura="cheia"
+          focoAcima={-0.08} aoSoltar={() => setSolto(true)} recentrar={recentrar} rotulo="Mapa com sua posição no caminho" />
+      </div>
+
+      <div className="nav-topo">
+        <section className="nav-instrucao" aria-live="polite">
+          <span className="nav-seta"><Icone nome={ICONE_MANOBRA[prox?.tipo] ?? 'setaCima'} /></span>
+          <div className="nav-instrucao-texto">
+            <strong>{formatarDistancia(e.distanciaProxima)}</strong>
+            <p>{textoPrincipal}</p>
           </div>
-          <BotaoSom fala={motor.current?.falaAtual()} claro />
-        </div>
-        <p className="instrucao-texto">{textoPrincipal}</p>
-      </section>
-      {erroGps && !usarSim && (
-        <Aviso tipo="erro" icone="lugar">
-          {erroGps} <button type="button" className="link-simples" onClick={() => { setErroGps(null); setUsarSim(true); }}>Usar caminhada simulada</button>
-        </Aviso>
+        </section>
+        {depois && (
+          <div className="nav-depois">
+            <span>Depois</span>
+            <Icone nome={ICONE_MANOBRA[depois.tipo] ?? 'setaCima'} />
+            <span className="nav-depois-texto">{depois.fala}</span>
+          </div>
+        )}
+        {erroGps && !usarSim && (
+          <div className="nav-gps" role="alert">
+            <Icone nome="lugar" /><span>{erroGps}</span>
+            <button type="button" onClick={() => { setErroGps(null); setUsarSim(true); }}>Simular caminhada</button>
+          </div>
+        )}
+      </div>
+
+      <div className="nav-lateral">
+        <button type="button" className="nav-redondo" onClick={repetir} aria-label="Repetir a instrução"><Icone nome="repetir" /></button>
+        <BotaoSom fala={motor.current?.falaAtual()} />
+        <button type="button" className="nav-redondo nav-redondo-alerta" onClick={() => aoAvisar(e.posicao ?? e.posicaoNaRota)}
+          aria-label="Avisar problema na calçada"><Icone nome="alerta" /></button>
+      </div>
+
+      {solto && (
+        <button type="button" className="nav-recentrar" onClick={() => { setSolto(false); setRecentrar((n) => n + 1); }}>
+          <Icone nome="caminho" />Recentralizar
+        </button>
       )}
-      <div className="mapa-solta mapa-flex">
-        <Mapa coords={rota.geometria.coords} marcadores={marcadores} posicao={e.posicao ? (e.foraDaRota ? e.posicao : e.posicaoNaRota) : null}
-          modo="seguir" altura="grande" rotulo="Mapa com sua posição no caminho" />
-      </div>
-      <div className="status-viagem" aria-live="off">
-        <span><strong>{e.eta_min} min</strong> · {formatarDistancia(e.restante)}</span>
-        <span>Chega {chegada}</span>
-      </div>
+
       {usarSim && (
-        <div className="simulacao" role="group" aria-label="Controles da caminhada simulada">
-          <strong>Caminhada simulada (demonstração)</strong>
-          <button type="button" onClick={() => setSim((s) => ({ ...s, pausado: !s.pausado }))} aria-pressed={sim.pausado}>
+        <div className="nav-sim" role="group" aria-label="Controles da caminhada simulada">
+          <strong>Simulação</strong>
+          <button type="button" onClick={() => setSim((x) => ({ ...x, pausado: !x.pausado }))} aria-pressed={sim.pausado}>
             {sim.pausado ? 'Continuar' : 'Pausar'}
           </button>
           {[2, 4, 8].map((m) => (
-            <button key={m} type="button" aria-pressed={sim.mult === m} onClick={() => setSim((s) => ({ ...s, mult: m }))}>{m}x</button>
+            <button key={m} type="button" aria-pressed={sim.mult === m} onClick={() => setSim((x) => ({ ...x, mult: m }))}>{m}x</button>
           ))}
-          <button type="button" aria-pressed={sim.fora} onClick={() => setSim((s) => ({ ...s, fora: !s.fora }))}>
-            {sim.fora ? 'Voltar à rota' : 'Sair da rota'}
+          <button type="button" aria-pressed={sim.fora} onClick={() => setSim((x) => ({ ...x, fora: !x.fora }))}>
+            {sim.fora ? 'Voltar' : 'Sair da rota'}
           </button>
         </div>
       )}
-      <div className="linha-botoes">
-        <Botao icone="repetir" variante="secundario" onClick={repetir}>Repetir</Botao>
-        <Botao icone="alerta" variante="alerta" onClick={() => aoAvisar(e.posicao ?? e.posicaoNaRota)}>Avisar</Botao>
-      </div>
-      <button type="button" className="link-simples" onClick={aoSair}>Encerrar rota</button>
+
+      <section className="nav-rodape" aria-live="off">
+        <button type="button" className="nav-redondo" onClick={() => setVerTodos(true)} aria-label="Ver todos os passos"><Icone nome="lista" /></button>
+        <div className="nav-eta">
+          <strong>{e.eta_min} min</strong>
+          <span>{formatarDistancia(e.restante)} · chega {chegada}</span>
+        </div>
+        <button type="button" className="nav-redondo" onClick={aoSair} aria-label="Encerrar rota"><Icone nome="fechar" /></button>
+      </section>
+
+      {verTodos && (
+        <section className="nav-passos" role="dialog" aria-modal="true" aria-label="Passos do caminho">
+          <div className="nav-passos-topo">
+            <h2>Próximos passos</h2>
+            <button type="button" className="nav-redondo" onClick={() => setVerTodos(false)} aria-label="Fechar lista de passos"><Icone nome="fechar" /></button>
+          </div>
+          <ol>
+            {[prox, ...seguintes].filter(Boolean).map((m, i) => (
+              <li key={m.indice ?? m.acumulado_m} className={i === 0 ? 'atual' : ''}>
+                <Icone nome={ICONE_MANOBRA[m.tipo] ?? 'setaCima'} />
+                <span>{m.fala}</span>
+                <em>{formatarDistancia(Math.max(0, m.acumulado_m - feito))}</em>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
     </main>
   );
 }
@@ -300,18 +355,28 @@ export function Chegada({ resumo, prefs, aoFim }) {
   const avaliar = async (nota) => {
     setAvaliado(true);
     falar('Obrigado pela resposta!');
-    try { await api.avaliar(resumo.rotaId, nota); } catch { /* opcional */ }
+    try { await api.avaliar(resumo.rotaId, nota, { perfil: (prefs.perfis ?? []).join('+') || 'sem_apoio', fonte_dados: resumo.fonte }); } catch { /* opcional */ }
     setTimeout(aoFim, 1200);
   };
-  // TODO: integrar aviso automático ao acompanhante (hoje abre um SMS pronto; nada sai sem a pessoa enviar).
-  const msg = encodeURIComponent(`Cheguei em ${nome}. (Caminho Livre)`);
+  // Aviso ao acompanhante: a pessoa decide e envia (LGPD). Compartilhamento nativo do celular
+  // (WhatsApp, SMS, e-mail...) com a posição de chegada; sem suporte, SMS pronto.
+  const texto = `Cheguei em ${nome}. (Caminho Livre)`;
+  const msg = encodeURIComponent(texto);
+  const compartilhar = async () => {
+    const url = resumo.posicao ? `https://www.openstreetmap.org/?mlat=${resumo.posicao.lat}&mlon=${resumo.posicao.lon}#map=18/${resumo.posicao.lat}/${resumo.posicao.lon}` : undefined;
+    try { await navigator.share({ title: 'Caminho Livre', text: texto, url }); } catch { /* cancelado */ }
+  };
   return (
     <Tela className="tela-chegada" fala={fala}>
       <div className="cabecalho"><span /><span /><BotaoSom fala={fala} claro /></div>
       <Icone nome="lugar" className="icone-grande" />
       <Titulo>Você chegou em {nome}.</Titulo>
       <p className="sub">{resumo.minutos} {resumo.minutos === 1 ? 'minuto' : 'minutos'}{extra}</p>
-      {prefs.acompanhante && (
+      {typeof navigator !== 'undefined' && navigator.share ? (
+        <button type="button" className="botao secundario" onClick={compartilhar}>
+          <Icone nome="compartilhar" /><span>Avisar {prefs.acompanhante || 'quem acompanha'}</span>
+        </button>
+      ) : prefs.acompanhante && (
         <a className="botao secundario" href={`sms:?&body=${msg}`}><Icone nome="pessoa" /><span>Avisar {prefs.acompanhante}</span></a>
       )}
       <div className="empurra" />

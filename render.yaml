@@ -14,7 +14,11 @@ services:
         generateValue: true
       - key: CL_SAL_DISPOSITIVO
         generateValue: true
+      - key: CL_ADMIN_TOKEN       # fila de moderação (/api/moderacao)
+        generateValue: true
       - key: OPENROUTER_API_KEY   # opcional: sem ela, o assistente responde por regras
         sync: false
-      - key: ORS_API_KEY          # opcional (Etapa 2 do plano de acessibilidade)
+      - key: ORS_API_KEY          # rota para cadeira de rodas + matriz de entradas (OpenRouteService)
+        sync: false
+      - key: VITE_MAPTILER_KEY   # chave pública de navegador da MapTiler (o Render a passa como build arg)
         sync: false

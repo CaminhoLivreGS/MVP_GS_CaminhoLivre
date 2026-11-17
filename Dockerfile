@@ -29,9 +29,13 @@ RUN npm ci --no-audit --no-fund
 # Código-fonte (filtrado pelo .dockerignore).
 COPY . .
 
+# Chave PÚBLICA de navegador da MapTiler (não é segredo: vai no JS do front e é
+# restrita por domínio no painel). Sem ela, o mapa usa os tiles do OpenStreetMap.
+ARG VITE_MAPTILER_KEY=""
 # Baixa opencv.js + cascades para public/ (falha se o checksum não conferir)
-# e gera o bundle de produção em dist/.
-RUN npm run deps && npm run build
+# e gera o bundle de produção em dist/. O opencv.js avulso (10 MB) só serve
+# ao avaliacao.html (dev): o app usa o OpenCV empacotado no worker de visão.
+RUN npm run deps && npm run build && rm -rf dist/opencv
 
 # ---------- Estágio 2: runtime ----------
 # Linha "stable" do nginx (1.30) sobre Alpine 3.24.

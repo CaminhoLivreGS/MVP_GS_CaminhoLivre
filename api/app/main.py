@@ -5,6 +5,7 @@ o nginx não publica). Contrato completo em /api/docs (OpenAPI).
 """
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import re
@@ -21,7 +22,7 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field
 
-from . import assistente, clima, config, osm_ao_vivo
+from . import assistente, clima, config, entradas, ors, osm_ao_vivo
 from .grafo import Grafo, distancia_m
 from .lugares import TIPO_LLM_PARA_CATEGORIA, Lugares, categoria_do_texto, tokens
 from .relatos import ErroRelato, Relatos
@@ -37,6 +38,7 @@ GRAFO = Grafo(config.DADOS_DIR / "grafo.json")
 LUGARES = Lugares(config.DADOS_DIR / "lugares.json")
 RELATOS = Relatos(config.DB_PATH, config.DADOS_DIR / "relatos_seed.json" if config.SEMEAR_RELATOS else None)
 BASE = assistente.BaseConhecimento(config.CONTEXTO)
+LOCAIS = entradas.Locais(config.DADOS_DIR / "locais_detalhados.json")
 QUALIDADE = json.loads((config.DADOS_DIR / "qualidade.json").read_text(encoding="utf-8"))
 config.FOTOS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -75,7 +77,7 @@ async def observar(request: Request, call_next):
 # Mesmos cabeçalhos de segurança do nginx (docker/nginx/security-headers.conf),
 # para o deploy em um serviço só (sem nginx na frente).
 CABECALHOS_SEGURANCA = {
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:; img-src 'self' blob: data: https://tile.openstreetmap.org; style-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'; worker-src 'self' blob:; img-src 'self' blob: data: https://api.maptiler.com https://tile.openstreetmap.org; style-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests",
     "Permissions-Policy": "camera=(self), microphone=(self), geolocation=(self), payment=(), usb=()",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
@@ -94,20 +96,34 @@ async def seguranca(request: Request, call_next):
     return resp
 
 
-# Limite simples por IP (protege a cota do LLM e evita spam de relatos).
+# Limite simples por IP (protege a cota do LLM/ORS e evita spam de relatos).
 _janelas: dict[str, deque] = defaultdict(deque)
+_ultima_limpeza = 0.0
+
+
+def ip_cliente(request: Request) -> str:
+    """IP real do cliente. O X-Forwarded-For pode ser forjado pelo cliente: só vale
+    o ÚLTIMO valor, que é o que o proxy de confiança (Render/nginx) acrescenta."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[-1].strip()[:64]
+    return request.client.host if request.client else "?"
 
 
 def limite(maximo: int, janela_s: int = 60):
     def dep(request: Request):
-        ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0].strip()
-        chave = f"{request.url.path}:{ip}"
+        global _ultima_limpeza
+        chave = f"{request.url.path}:{ip_cliente(request)}"
         q, agora = _janelas[chave], time.time()
         while q and agora - q[0] > janela_s:
             q.popleft()
         if len(q) >= maximo:
             raise HTTPException(429, "Muitas requisições. Espere um minuto.")
         q.append(agora)
+        if agora - _ultima_limpeza > 300:  # não deixa a memória crescer com IPs que já foram embora
+            _ultima_limpeza = agora
+            for k in [k for k, v in _janelas.items() if not v or agora - v[-1] > 600]:
+                _janelas.pop(k, None)
     return dep
 
 
@@ -176,11 +192,11 @@ def territorio():
             "demo": GRAFO.meta.get("demo")}
 
 
-@app.get("/api/lugares")
+@app.get("/api/lugares", dependencies=[Depends(limite(40))])
 def buscar_lugares(q: str = "", lat: Optional[float] = None, lon: Optional[float] = None,
                    categoria: Optional[str] = None, limite_itens: int = 5):
     ref = (lat, lon) if lat is not None and lon is not None else None
-    return {"lugares": buscar(q[:120], ref, categoria, min(limite_itens, 10))}
+    return {"lugares": buscar(q[:120], ref, categoria, max(1, min(limite_itens, 10)))}
 
 
 def buscar(texto: str, ref, categoria=None, limite=5) -> list[dict]:
@@ -262,27 +278,40 @@ def rota(p: PedidoRota):
     except SemRota as e:
         raise HTTPException(422, str(e))
     except (osm_ao_vivo.IndisponivelOSM, requests.RequestException):
-        fonte = "sem_acessibilidade"
+        vel = min((VELOCIDADE_MS[x] for x in ctx.perfis), default=1.1)
+        r = None
+        # Plano B acessível: OpenRouteService (cadeira de rodas / sem escadas), com a chave no servidor.
         try:
-            vel = min((VELOCIDADE_MS[x] for x in ctx.perfis), default=1.1)
-            r = osm_ao_vivo.rota_osrm(origem, destino, vel)
-        except (requests.RequestException, KeyError, IndexError):
-            raise HTTPException(503, "Não consegui calcular a rota agora. Tente de novo em um minuto.")
+            r = ors.rota(origem, destino, ctx.perfis, vel)
+            fonte = "ors"
+        except (ors.IndisponivelORS, KeyError, IndexError) as e:
+            log.warning(json.dumps({"rota_ors": str(e)}))
+        if r is None:
+            fonte = "sem_acessibilidade"
+            try:
+                r = osm_ao_vivo.rota_osrm(origem, destino, vel)
+            except (requests.RequestException, KeyError, IndexError):
+                raise HTTPException(503, "Não consegui calcular a rota agora. Tente de novo em um minuto.")
         r["perfil"] = list(ctx.perfis)
         r["falas"] = fala_resumo(r)
-        r["falas"]["avisos"].insert(0, "Nesta área ainda não tenho dados de calçada, escada e travessia. Vá com atenção.")
+        if fonte == "ors":
+            r["falas"]["avisos"].insert(0, "Rota do OpenRouteService: evita escadas"
+                                        + (" e ladeiras fortes" if "cadeira" in ctx.perfis else "")
+                                        + ". Os problemas avisados pela comunidade nesta área ainda não entram no cálculo.")
+        else:
+            r["falas"]["avisos"].insert(0, "Nesta área ainda não tenho dados de calçada, escada e travessia. Vá com atenção.")
     r["fonte_dados"] = fonte
     r["id"] = uuid.uuid4().hex[:12]
     r["clima"] = tempo
     r["noite"] = ctx.noite
-    if p.explicar and fonte != "sem_acessibilidade":
+    if p.explicar and fonte in ("piloto", "osm_ao_vivo"):
         r["falas"] = assistente.explicar_rota(r, idoso=p.idoso)
     ROTAS_CALC.labels("+".join(sorted(ctx.perfis)), str(bool(r["desvios"])).lower()).inc()
     _contar_llm()
     return r
 
 
-@app.get("/api/mapa")
+@app.get("/api/mapa", dependencies=[Depends(limite(60))])
 def mapa(s: float, w: float, n: float, e: float):
     if (n - s) > 0.03 or (e - w) > 0.03:
         raise HTTPException(422, "Área grande demais.")
@@ -312,7 +341,13 @@ def listar_relatos(s: Optional[float] = None, w: Optional[float] = None, n: Opti
 @app.post("/api/relatos", dependencies=[Depends(limite(10))])
 async def criar_relato(categoria: str = Form(...), lat: float = Form(...), lon: float = Form(...),
                        hash_foto: Optional[str] = Form(None), validacao: Optional[str] = Form(None),
+                       detalhes: Optional[str] = Form(None),
                        foto: Optional[UploadFile] = File(None), x_dispositivo: Optional[str] = Header(None)):
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise HTTPException(422, "Posição inválida.")
+    from .relatos import CATEGORIAS
+    if categoria not in CATEGORIAS:
+        raise HTTPException(422, "categoria inválida")
     rua = None
     if GRAFO.dentro_territorio(lat, lon):
         aj = GRAFO.ajustar(lat, lon, 60)
@@ -338,9 +373,17 @@ async def criar_relato(categoria: str = Form(...), lat: float = Form(...), lon: 
             val = {k: v.get(k) for k in ("status", "motivos", "evidencias", "rostos_borrados", "placas_borradas") if k in v}
         except (ValueError, AttributeError):
             val = None
+    det = None
+    if detalhes:
+        try:
+            det = json.loads(detalhes[:500])
+            det = det if isinstance(det, dict) else None
+        except ValueError:
+            det = None
     try:
         r = RELATOS.criar(categoria=categoria, lat=lat, lon=lon, rua=rua, dispositivo=validar_dispositivo(x_dispositivo),
-                          hash_foto=(hash_foto or None) and hash_foto[:64], foto_arquivo=arquivo, validacao=val)
+                          hash_foto=(hash_foto or None) and hash_foto[:64], foto_arquivo=arquivo, validacao=val,
+                          detalhes=det)
     except ErroRelato as e:
         raise HTTPException(422, str(e))
     RELATOS_CRIADOS.labels(categoria).inc()
@@ -377,19 +420,104 @@ AVALIACOES = Counter("cl_avaliacoes_rota_total", "Avaliação da rota ao chegar 
 
 
 class Avaliacao(BaseModel):
-    rota_id: Optional[str] = Field(default=None, max_length=40)
+    rota_id: Optional[str] = Field(default=None, max_length=40, pattern=r"^[0-9a-f]{0,40}$")
     nota: Literal["bom", "ruim"]
+    perfil: Optional[str] = Field(default=None, max_length=60, pattern=r"^[a-z_+]*$")
+    fonte_dados: Optional[Literal["piloto", "osm_ao_vivo", "ors", "sem_acessibilidade"]] = None
 
 
 @app.post("/api/avaliacoes", dependencies=[Depends(limite(10))])
 def avaliar(p: Avaliacao):
-    # TODO: integrar persistência das avaliações (hoje só métrica Prometheus + log) para o BI.
     AVALIACOES.labels(p.nota).inc()
+    RELATOS.registrar_avaliacao(p.rota_id, p.nota, p.perfil, p.fonte_dados)
     log.info(json.dumps({"evento": "avaliacao_rota", "nota": p.nota, "rota_id": p.rota_id}))
     return {"ok": True}
 
 
-@app.get("/api/onde-estou")
+@app.get("/api/indicadores", dependencies=[Depends(limite(30))])
+def indicadores():
+    """Indicadores agregados para o BI (sem dado pessoal: só contagens)."""
+    return RELATOS.indicadores()
+
+
+# ---------------------------------------------------------------------------
+# Melhor entrada / melhor saída de um lugar
+# ---------------------------------------------------------------------------
+def _perfis(texto: str) -> tuple[str, ...]:
+    ps = tuple(dict.fromkeys(x for x in (texto or "").split(",") if x in PERFIS))
+    return ps or ("sem_apoio",)
+
+
+def _entrada_publica(e: dict) -> dict:
+    campos = ("id", "nome", "tipo", "lat", "lon", "degraus", "rampa", "elevador", "porta", "largura_m", "piso_tatil",
+              "coberta", "horario", "fonte", "confianca", "qualidades", "motivo", "distancia_fora_m", "distancia_dentro_m",
+              "nota", "aberta")
+    return {k: e[k] for k in campos if k in e}
+
+
+def _resposta_escolha(local, res, fontes):
+    exemplo = any(e.get("fonte") == "exemplo" for e in res["entradas"] + res["descartadas"])
+    return {"local": entradas.resumo_local(local) if local else None,
+            "escolhida": _entrada_publica(res["escolhida"]) if res["escolhida"] else None,
+            "entradas": [_entrada_publica(e) for e in res["entradas"]],
+            "descartadas": [_entrada_publica(e) for e in res["descartadas"]],
+            "fala": res["fala"], "fonte_distancia": res["fonte_distancia"], "fontes": fontes, "dados_exemplo": exemplo,
+            "fechado_agora": res.get("fechado_agora", False)}
+
+
+def _quando(hora: Optional[str]):
+    """Demo reproduzível: ?hora=15:00 simula esse horário de hoje (só muda o horário de funcionamento)."""
+    if not hora or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", hora):
+        return None
+    h, m = map(int, hora.split(":"))
+    return datetime.now(ZoneInfo(config.FUSO)).replace(hour=h, minute=m)
+
+
+@app.get("/api/locais", dependencies=[Depends(limite(30))])
+def locais_perto(lat: float, lon: float):
+    """Lugares com entradas e pontos internos mapeados perto de você (para "estou saindo")."""
+    return {"locais": LOCAIS.proximos(lat, lon)}
+
+
+@app.get("/api/locais/entradas", dependencies=[Depends(limite(20))])
+def melhor_entrada(lat: float, lon: float, origem_lat: float, origem_lon: float, perfis: str = "",
+                   nome: Optional[str] = None, hora: Optional[str] = None):
+    """Entradas do lugar em (lat, lon) ordenadas para o perfil, a partir da origem."""
+    local, lista, fontes = entradas.entradas_do_local(LOCAIS, lat, lon, (nome or "")[:120])
+    if not lista:
+        return {"local": None, "escolhida": None, "entradas": [], "descartadas": [], "fala": None,
+                "fonte_distancia": None, "fontes": fontes, "dados_exemplo": False}
+    res = entradas.escolher(lista, _perfis(perfis), origem={"lat": origem_lat, "lon": origem_lon}, sentido="chegar",
+                            quando=_quando(hora))
+    return _resposta_escolha(local, res, fontes)
+
+
+@app.get("/api/locais/saida", dependencies=[Depends(limite(20))])
+def melhor_saida(local_id: str, destino_lat: float, destino_lon: float, perfis: str = "",
+                 ponto: Optional[str] = None, texto: Optional[str] = None, hora: Optional[str] = None):
+    """Melhor saída: de onde você está dentro do lugar até o destino lá fora."""
+    local = LOCAIS.por_id(local_id[:80])
+    if not local:
+        raise HTTPException(404, "Lugar não encontrado.")
+    p = entradas.ponto_interno(local, ponto_id=(ponto or "")[:80] or None, texto=(texto or "")[:200])
+    res = entradas.escolher(local["entradas"], _perfis(perfis), destino={"lat": destino_lat, "lon": destino_lon},
+                            internas=p["saidas_m"] if p else None, sentido="sair", quando=_quando(hora))
+    out = _resposta_escolha(local, res, [local.get("fonte", "levantamento")])
+    out["ponto"] = {"id": p["id"], "nome": p["nome"]} if p else None
+    if texto and not p:
+        out["fala"] = "Não reconheci onde você está. " + (out["fala"] or "")
+    return out
+
+
+@app.get("/api/locais/{local_id}")
+def obter_local(local_id: str):
+    local = LOCAIS.por_id(local_id[:80])
+    if not local:
+        raise HTTPException(404, "Lugar não encontrado.")
+    return {**entradas.resumo_local(local), "entradas": [_entrada_publica(e) for e in local["entradas"]]}
+
+
+@app.get("/api/onde-estou", dependencies=[Depends(limite(30))])
 def onde_estou(lat: float, lon: float):
     """Endereço aproximado da posição (Photon). A posição não é guardada."""
     try:
@@ -398,7 +526,7 @@ def onde_estou(lat: float, lon: float):
         return {"texto": None, "no_piloto": GRAFO.dentro_territorio(lat, lon)}
 
 
-@app.get("/api/clima")
+@app.get("/api/clima", dependencies=[Depends(limite(30))])
 def tempo(lat: float, lon: float, simular: bool = False):
     return clima.resumo(lat, lon, simular_chuva=simular)
 
@@ -406,9 +534,37 @@ def tempo(lat: float, lon: float, simular: bool = False):
 # ---------------------------------------------------------------------------
 # Integração com o robô de RPA (UiPath): token de serviço obrigatório
 # ---------------------------------------------------------------------------
+def _token_ok(authorization: Optional[str], token: str) -> bool:
+    # compare_digest: tempo constante (não vaza o token por diferença de tempo de resposta)
+    return bool(token) and hmac.compare_digest((authorization or "").encode(), f"Bearer {token}".encode())
+
+
 def exigir_rpa(authorization: Optional[str] = Header(None)):
-    if not config.RPA_TOKEN or authorization != f"Bearer {config.RPA_TOKEN}":
+    if not _token_ok(authorization, config.RPA_TOKEN):
         raise HTTPException(401, "Token do robô inválido.")
+
+
+def exigir_admin(authorization: Optional[str] = Header(None)):
+    if not _token_ok(authorization, config.ADMIN_TOKEN):
+        raise HTTPException(401, "Token de administração inválido.")
+
+
+class Decisao(BaseModel):
+    decisao: Literal["aprovar", "rejeitar"]
+
+
+@app.get("/api/moderacao", dependencies=[Depends(exigir_admin)])
+def fila_moderacao():
+    """Relatos que a visão computacional não conseguiu confirmar (INCONCLUSIVO)."""
+    return {"relatos": RELATOS.moderacao_pendentes()}
+
+
+@app.post("/api/moderacao/{rid}", dependencies=[Depends(exigir_admin)])
+def moderar(rid: str, p: Decisao):
+    try:
+        return RELATOS.moderar(rid[:20], p.decisao)
+    except ErroRelato as e:
+        raise HTTPException(422, str(e))
 
 
 @app.get("/api/chamados/pendentes", dependencies=[Depends(exigir_rpa)])
@@ -441,8 +597,12 @@ def chamado_resolvido(rid: str):
         raise HTTPException(404, str(e))
 
 
-@app.get("/metrics")
-def metricas():
+@app.get("/metrics", include_in_schema=False)
+def metricas(request: Request, authorization: Optional[str] = Header(None)):
+    # Rede interna (Prometheus do compose, sem proxy) lê direto. Pela internet (passou por
+    # proxy: tem X-Forwarded-For), só com CL_METRICS_TOKEN; sem token configurado, 404.
+    if request.headers.get("x-forwarded-for") and not _token_ok(authorization, config.METRICS_TOKEN):
+        raise HTTPException(404, "Not Found")
     _contar_llm()
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

@@ -4,6 +4,7 @@ import { ConfirmarDestino, Home, Ouvindo } from './telas/Destino.jsx';
 import { Chegada, Navegacao, PreviaRota } from './telas/Rota.jsx';
 import { AvisoEnviado, CameraAviso, TipoAviso } from './telas/Avisar.jsx';
 import { Ajuda, Ajustes, MeusAvisos, Novidade, Privacidade } from './telas/Conta.jsx';
+import { Saindo, lerCodigoLocal } from './telas/Local.jsx';
 import { Aviso, Botao, Cabecalho, Carregando, Tela, Titulo, VozContexto } from './componentes/base.jsx';
 import { carregar, salvar } from './servicos/preferencias.js';
 import { Celular } from './componentes/Celular.jsx';
@@ -15,10 +16,25 @@ const params = new URLSearchParams(location.search);
 // Demonstração reproduzível: ?chuva=simular força chuva forte; ?chuva=nao ignora a previsão real.
 const SIMULAR_CHUVA = params.get('chuva') === 'simular';
 const SEM_CHUVA = params.get('chuva') === 'nao';
+// ?hora=15:00 simula o horário de funcionamento dos lugares (demo à noite com o shopping "aberto").
+const HORA_DEMO = /^([01]\d|2[0-3]):[0-5]\d$/.test(params.get('hora') ?? '') ? params.get('hora') : null;
+// QR code do ponto interno (ou link): ?saindo=<lugar>&ponto=<ponto> abre direto o "Estou saindo".
+const CODIGO_INICIAL = lerCodigoLocal(location.href);
+if (CODIGO_INICIAL) {
+  const u = new URL(location.href);
+  u.searchParams.delete('saindo');
+  u.searchParams.delete('ponto');
+  history.replaceState(null, '', u);
+}
+// Lugares sem "porta" (o destino já é o ponto): não procura entrada.
+const SEM_ENTRADA = new Set(['ponto_onibus', 'parque', 'casa']);
+const comPrazo = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('prazo')), ms))]);
 
 export function App() {
   const [prefs, setPrefsEstado] = useState(carregar);
-  const [pilha, setPilha] = useState(() => [prefs.onboardingFeito ? 'home' : 'boas_vindas']);
+  const [pilha, setPilha] = useState(() => (prefs.onboardingFeito ? (CODIGO_INICIAL ? ['home', 'saindo'] : ['home']) : ['boas_vindas']));
+  const [saidaInicial] = useState(CODIGO_INICIAL);
+  const [locaisPerto, setLocaisPerto] = useState([]);
   const tela = pilha[pilha.length - 1];
   const [territorio, setTerritorio] = useState(null);
   const [origem, setOrigem] = useState(null);
@@ -62,7 +78,7 @@ export function App() {
   // Origem: a localização REAL da pessoa, em qualquer lugar (como Waze/Maps).
   // Só se o GPS for negado ou falhar usamos a partida de demonstração (Vila Yara).
   useEffect(() => {
-    if (tela !== 'home' || origem) return;
+    if ((tela !== 'home' && tela !== 'saindo') || origem) return;
     let vivo = true;
     (async () => {
       let t = territorio;
@@ -109,6 +125,7 @@ export function App() {
       else setSalvos(l);
     });
     api.novidades(true).then((r) => r.novidades[0] && setNovidade(r.novidades[0])).catch(() => {});
+    api.locaisPerto(origem.lat, origem.lon).then((r) => setLocaisPerto(r.locais)).catch(() => setLocaisPerto([]));
   }, [origem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const buscarDestino = useCallback(async (texto) => {
@@ -121,18 +138,36 @@ export function App() {
     }
   }, [ir, origem]);
 
-  const calcularRota = useCallback(async (destino) => {
+  // opcoes.origem: partir de outro ponto (ex.: a saída escolhida no "Estou saindo").
+  const calcularRota = useCallback(async (destino, opcoes = {}) => {
     ir('rota');
+    const de = opcoes.origem ?? origem;
+    const perfis = prefs.perfis.length ? prefs.perfis : ['sem_apoio'];
+    let alvo = { lat: destino.lat, lon: destino.lon, nome: destino.nome, id: destino.id };
+    let entrada = null;
+    // Melhor entrada para o perfil: a rota termina NA PORTA certa, não no meio do prédio.
+    if (!opcoes.semEntrada && !SEM_ENTRADA.has(destino.categoria)) {
+      setRotaEstado({ carregando: true, etapa: 'entrada' });
+      try {
+        entrada = await comPrazo(api.entradas(destino, de, perfis, HORA_DEMO), 9000);
+        if (entrada.escolhida) alvo = { ...alvo, lat: entrada.escolhida.lat, lon: entrada.escolhida.lon, nome: `${destino.nome} (${entrada.escolhida.nome})` };
+        else entrada = entrada.descartadas?.length ? entrada : null;
+      } catch {
+        entrada = null; // sem dado de entradas: segue até o lugar, como antes
+      }
+    }
     const pedido = {
-      origem: { lat: origem.lat, lon: origem.lon, nome: origem.nome },
-      destino: { lat: destino.lat, lon: destino.lon, nome: destino.nome, id: destino.id },
-      perfis: prefs.perfis.length ? prefs.perfis : ['sem_apoio'],
+      origem: { lat: de.lat, lon: de.lon, nome: de.nome },
+      destino: alvo,
+      perfis,
       idoso: prefs.vozDevagar,
       chuva: SIMULAR_CHUVA ? 'simular' : SEM_CHUVA ? 'nao' : 'auto',
     };
     setRotaEstado({ carregando: true, pedido });
     try {
       const r = await api.rota(pedido);
+      if (entrada) r.entrada = entrada;
+      if (opcoes.saida) r.saida = opcoes.saida;
       guardarRota(r);
       setRotaEstado({ carregando: false, rota: r, pedido });
     } catch (e) {
@@ -175,6 +210,7 @@ export function App() {
       ) : (
         <Home key={digitar ? 'd' : 'n'} clima={clima} salvos={salvos} origem={origem} local={local} avisoOrigem={avisoOrigem} aoMenu={menu}
           aoFalar={() => ir('ouvindo')} aoDigitar={buscarDestino} aoEscolher={calcularRota}
+          locaisPerto={locaisPerto} aoSaindo={() => ir('saindo')}
         />
       );
       break;
@@ -192,13 +228,24 @@ export function App() {
       break;
     case 'rota':
       conteudo = rotaEstado.carregando ? (
-        <Tela fala="Calculando o caminho mais seguro."><Cabecalho titulo="Sua rota" aoVoltar={voltar} /><Titulo>Calculando o caminho mais seguro…</Titulo><Carregando texto="Olhando escadas, calçadas e avisos" /></Tela>
+        <Tela fala={rotaEstado.etapa === 'entrada' ? 'Escolhendo a melhor entrada.' : 'Calculando o caminho mais seguro.'}><Cabecalho titulo="Sua rota" aoVoltar={voltar} />
+          <Titulo>{rotaEstado.etapa === 'entrada' ? 'Escolhendo a melhor entrada…' : 'Calculando o caminho mais seguro…'}</Titulo>
+          <Carregando texto={rotaEstado.etapa === 'entrada' ? 'Olhando degraus, rampas e portas' : 'Olhando escadas, calçadas e avisos'} /></Tela>
       ) : rotaEstado.erro ? (
         <Tela><Cabecalho titulo="Sua rota" aoVoltar={voltar} /><Titulo>Não encontrei um caminho</Titulo><Aviso tipo="erro">{rotaEstado.erro}</Aviso>
           <div className="empurra" /><Botao variante="secundario" onClick={voltar}>Voltar</Botao></Tela>
       ) : (
         <PreviaRota rota={rotaEstado.rota} origem={origem} aoVoltar={voltar}
           aoComecar={({ simular }) => { setNav({ rota: rotaEstado.rota, simular, pedido: rotaEstado.pedido, chave: Date.now() }); irRaiz('navegacao'); }} />
+      );
+      break;
+    case 'saindo':
+      conteudo = !origem ? (
+        <Tela fala="Procurando onde você está."><Cabecalho titulo="Estou saindo" aoVoltar={voltar} /><Carregando texto="Pedindo sua localização" /></Tela>
+      ) : (
+        <Saindo origem={origem} perfis={prefs.perfis.length ? prefs.perfis : ['sem_apoio']} salvos={salvos} inicial={saidaInicial}
+          hora={HORA_DEMO} aoVoltar={voltar}
+          aoRota={(de, para, info) => calcularRota(para, { origem: de, semEntrada: true, saida: info })} />
       );
       break;
     case 'chegada':

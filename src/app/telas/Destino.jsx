@@ -9,7 +9,7 @@ import { escutaDisponivel, escutar, falar } from '../servicos/voz.js';
 const ICONE_CATEGORIA = { ubs: 'ubs', hospital: 'ubs', clinica: 'ubs', farmacia: 'ubs', estacao: 'estacao', casa: 'casa' };
 
 /** Página 4: início. */
-export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDigitar, aoEscolher, aoMenu }) {
+export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDigitar, aoEscolher, aoMenu, locaisPerto = [], aoSaindo }) {
   const [texto, setTexto] = useState('');
   const [digitando, setDigitando] = useState(!escutaDisponivel());
   const fala = `${clima?.texto ? clima.texto + ' ' : ''}Para onde você quer ir? Toque no botão amarelo e fale.`;
@@ -21,7 +21,7 @@ export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDig
       )}
       {clima?.texto && (
         <div className="banner-clima" role="status">
-          <Icone nome="chuva" />
+          <Icone nome={clima.alerta_tipo === 'calor' || clima.alerta_tipo === 'uv' ? 'sol' : clima.alerta_tipo === 'ar' ? 'alerta' : 'chuva'} />
           <p><strong>{clima.texto.split('.')[0]}.</strong>{clima.texto.split('.').slice(1).join('.')}
             {clima.simulado && <span className="nota"> (simulação)</span>}</p>
         </div>
@@ -45,6 +45,13 @@ export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDig
         </form>
       ) : (
         <button type="button" className="link-simples" onClick={() => setDigitando(true)}>Prefiro digitar</button>
+      )}
+      {locaisPerto[0] && locaisPerto[0].distancia_m < 600 ? (
+        <button type="button" className="botao secundario botao-saindo" onClick={aoSaindo}>
+          <Icone nome="saida" /><span>Estou saindo do {locaisPerto[0].nome}</span>
+        </button>
+      ) : aoSaindo && (
+        <button type="button" className="link-simples" onClick={aoSaindo}>Estou saindo de um lugar</button>
       )}
       {salvos.length > 0 && (
         <section aria-labelledby="titulo-salvos">
