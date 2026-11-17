@@ -39,6 +39,8 @@ export function App() {
   const [territorio, setTerritorio] = useState(null);
   const [origem, setOrigem] = useState(null);
   const [avisoOrigem, setAvisoOrigem] = useState(null);
+  const [semServidor, setSemServidor] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
   const [clima, setClima] = useState(null);
   const [salvos, setSalvos] = useState([]);
   const [busca, setBusca] = useState({ carregando: false });
@@ -80,20 +82,28 @@ export function App() {
   useEffect(() => {
     if ((tela !== 'home' && tela !== 'saindo') || origem) return;
     let vivo = true;
+    setSemServidor(false);
     (async () => {
       let t = territorio;
       try {
         t = t ?? await api.territorio();
+        if (!t?.centro) throw new Error('resposta inválida');
         if (vivo) setTerritorio(t);
       } catch {
-        if (vivo) setAvisoOrigem('Sem conexão com o servidor. Verifique a internet.');
+        // Sem servidor não há como seguir: sai do "carregando" e oferece tentar de novo.
+        if (vivo) setSemServidor(true);
         return;
       }
       // Mock deliberado (só sem GPS): partida de demonstração na Vila Yara (gold do pipeline).
       const casa = t.demo?.casa ?? { nome: 'Casa', lat: t.centro[0], lon: t.centro[1] };
       let o = null;
       try {
-        const p = await FonteGPS.obterUmaVez({ timeout: 10000 });
+        // O timeout do navegador não conta enquanto o pedido de permissão está aberto;
+        // este limite garante que a tela nunca fica presa esperando a resposta.
+        const p = await Promise.race([
+          FonteGPS.obterUmaVez({ timeout: 10000 }),
+          new Promise((_, rej) => setTimeout(() => rej({ codigo: 'DEMOROU' }), 15000)),
+        ]);
         o = { ...p, nome: 'Você', fonte: 'gps' };
       } catch (err) {
         if (vivo) setAvisoOrigem(err?.codigo === 'PERMISSAO_NEGADA'
@@ -104,7 +114,26 @@ export function App() {
       setOrigem(o ?? { ...casa, fonte: 'demo' });
     })();
     return () => { vivo = false; };
-  }, [tela, origem, territorio]);
+  }, [tela, origem, territorio, tentativa]);
+
+  const usarDemonstracao = () => {
+    if (!territorio) return;
+    const casa = territorio.demo?.casa ?? { nome: 'Casa', lat: territorio.centro[0], lon: territorio.centro[1] };
+    setAvisoOrigem('Partida de demonstração na Vila Yara.');
+    setOrigem({ ...casa, fonte: 'demo' });
+  };
+  const esperandoOrigem = semServidor ? (
+    <>
+      <Aviso tipo="erro">Não consegui falar com o servidor. Verifique a internet e tente de novo.</Aviso>
+      <Botao icone="repetir" onClick={() => setTentativa((n) => n + 1)}>Tentar de novo</Botao>
+    </>
+  ) : (
+    <>
+      <Carregando texto="Pedindo sua localização" />
+      <p className="sub">O app pergunta antes de usar sua localização. Se não quiser, tudo bem: usamos um ponto de partida de demonstração.</p>
+      {territorio && <Botao variante="secundario" onClick={usarDemonstracao}>Usar ponto de demonstração</Botao>}
+    </>
+  );
 
   // Clima, lugares salvos e novidades dependem da origem.
   useEffect(() => {
@@ -205,8 +234,7 @@ export function App() {
     case 'home':
       conteudo = !origem ? (
         <Tela fala="Procurando onde você está."><Cabecalho marca /><Titulo>Procurando onde você está…</Titulo>
-          <Carregando texto="Pedindo sua localização" />
-          <p className="sub">O app pergunta antes de usar sua localização. Se não quiser, tudo bem: usamos um ponto de partida de demonstração.</p></Tela>
+          {esperandoOrigem}</Tela>
       ) : (
         <Home key={digitar ? 'd' : 'n'} clima={clima} salvos={salvos} origem={origem} local={local} avisoOrigem={avisoOrigem} aoMenu={menu}
           aoFalar={() => ir('ouvindo')} aoDigitar={buscarDestino} aoEscolher={calcularRota}
@@ -241,7 +269,7 @@ export function App() {
       break;
     case 'saindo':
       conteudo = !origem ? (
-        <Tela fala="Procurando onde você está."><Cabecalho titulo="Estou saindo" aoVoltar={voltar} /><Carregando texto="Pedindo sua localização" /></Tela>
+        <Tela fala="Procurando onde você está."><Cabecalho titulo="Estou saindo" aoVoltar={voltar} />{esperandoOrigem}</Tela>
       ) : (
         <Saindo origem={origem} perfis={prefs.perfis.length ? prefs.perfis : ['sem_apoio']} salvos={salvos} inicial={saidaInicial}
           hora={HORA_DEMO} aoVoltar={voltar}
