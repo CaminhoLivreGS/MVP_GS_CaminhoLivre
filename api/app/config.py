@@ -15,6 +15,11 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 LLM_MODELOS = [m.strip() for m in os.getenv(
     "LLM_MODELOS", "nvidia/nemotron-3-ultra-550b-a55b:free,inclusionai/ling-3.2-flash:free").split(",") if m.strip()]
 LLM_TIMEOUT_S = float(os.getenv("LLM_TIMEOUT_S", "12"))
+# Tempo total (todas as tentativas somadas) que cada tela aceita esperar pela IA.
+# Estourou: responde por regras. Ficam bem abaixo dos timeouts do front (20-25 s).
+LLM_PRAZO_DESTINO_S = float(os.getenv("LLM_PRAZO_DESTINO_S", "7"))
+LLM_PRAZO_ROTA_S = float(os.getenv("LLM_PRAZO_ROTA_S", "9"))
+LLM_PRAZO_AJUDA_S = float(os.getenv("LLM_PRAZO_AJUDA_S", "10"))
 LLM_MOCK = os.getenv("LLM_MOCK", "0") == "1"
 
 # Token compartilhado com o robô de RPA (UiPath) para os endpoints de chamados.

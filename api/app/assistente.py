@@ -36,7 +36,9 @@ def llm_disponivel() -> bool:
     return bool(config.OPENROUTER_API_KEY) or config.LLM_MOCK
 
 
-def chamar_llm(messages, temperature=0.2, max_tokens=500, tarefa="geral") -> dict:
+def chamar_llm(messages, temperature=0.2, max_tokens=500, tarefa="geral", prazo=None) -> dict:
+    """prazo: instante (time.monotonic()) até quando a resposta ainda serve à tela.
+    Passado o prazo, desiste e quem chamou cai nas regras, em vez de deixar o app esperando."""
     if not llm_disponivel():
         raise LLMIndisponivel("sem chave")
     erros = []
@@ -47,9 +49,14 @@ def chamar_llm(messages, temperature=0.2, max_tokens=500, tarefa="geral") -> dic
             return _cache[chave]
         if config.LLM_MOCK:
             raise LLMIndisponivel("modo mock")
+        espera = config.LLM_TIMEOUT_S if prazo is None else min(config.LLM_TIMEOUT_S, prazo - time.monotonic())
+        if espera < 1.5:
+            erros.append(f"{modelo}: sem tempo")
+            LOG_CHAMADAS.append({"tarefa": tarefa, "modelo": modelo, "status": "sem_tempo", "latencia_s": None})
+            break
         ini = time.time()
         try:
-            r = requests.post(ENDPOINT, timeout=config.LLM_TIMEOUT_S, headers={
+            r = requests.post(ENDPOINT, timeout=espera, headers={
                 "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
                 "HTTP-Referer": "https://caminho-livre.app", "X-Title": "Caminho Livre"},
                 json={"model": modelo, "messages": messages, "temperature": temperature,
@@ -168,8 +175,9 @@ def interpretar_destino(fala: str) -> dict:
     if EMERGENCIA_RE.search(normalizar(fala)):   # emergência: decisão no código, sem esperar o LLM
         return destino_por_regras(fala)
     msgs = [{"role": "system", "content": SYSTEM_DESTINO}, {"role": "user", "content": f'Fala: "{fala}"'}]
+    prazo = time.monotonic() + config.LLM_PRAZO_DESTINO_S
     try:
-        r = chamar_llm(msgs, temperature=0, max_tokens=300, tarefa="destino")
+        r = chamar_llm(msgs, temperature=0, max_tokens=300, tarefa="destino", prazo=prazo)
         try:
             d = extrair_json(r["texto"]); erros = validar_destino(d)
         except ValueError as e:
@@ -177,7 +185,7 @@ def interpretar_destino(fala: str) -> dict:
         if erros:
             msgs += [{"role": "assistant", "content": r["texto"]},
                      {"role": "user", "content": f"Sua resposta tem problemas: {erros}. Responda de novo SOMENTE com o JSON corrigido."}]
-            r = chamar_llm(msgs, temperature=0, max_tokens=300, tarefa="destino_reparo")
+            r = chamar_llm(msgs, temperature=0, max_tokens=300, tarefa="destino_reparo", prazo=prazo)
             d = extrair_json(r["texto"]); erros = validar_destino(d)
         if erros:
             return destino_por_regras(fala)
@@ -235,7 +243,8 @@ def explicar_rota(rota: dict, idoso: bool = False) -> dict:
     user = f"PERFIL DA PESSOA: {', '.join(perfis) or 'geral'}\nESTILO:\n{estilo}\n\nDADOS:\n{json.dumps(dados, ensure_ascii=False)}"
     try:
         r = chamar_llm([{"role": "system", "content": SYSTEM_ROTA}, {"role": "user", "content": user}],
-                       temperature=0.2, max_tokens=600, tarefa="rota")
+                       temperature=0.2, max_tokens=600, tarefa="rota",
+                       prazo=time.monotonic() + config.LLM_PRAZO_ROTA_S)
         saida = extrair_json(r["texto"])
         if not isinstance(saida, dict) or not verificar_fidelidade(saida, rota):
             raise ValueError("resposta infiel aos dados")
@@ -309,7 +318,8 @@ def responder_ajuda(base: BaseConhecimento, pergunta: str) -> dict:
     msgs = [{"role": "system", "content": SYSTEM_AJUDA.format(contexto=contexto)},
             {"role": "user", "content": f"<pergunta>{pergunta}</pergunta>"}]
     try:
-        r = chamar_llm(msgs, temperature=0.1, max_tokens=250, tarefa="ajuda")
+        r = chamar_llm(msgs, temperature=0.1, max_tokens=250, tarefa="ajuda",
+                       prazo=time.monotonic() + config.LLM_PRAZO_AJUDA_S)
         resposta = re.sub(r"[*#`_]", "", r["texto"])
         return {"resposta": resposta, "secoes": [s["titulo"] for _, s in achados], "fonte": r["modelo"]}
     except LLMIndisponivel:

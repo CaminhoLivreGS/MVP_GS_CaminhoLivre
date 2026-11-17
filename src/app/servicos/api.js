@@ -50,7 +50,7 @@ export const api = {
     if (categoria) p.set('categoria', categoria);
     return chamar(`/lugares?${p}`);
   },
-  destino: (fala, ref) => chamar('/assistente/destino', { metodo: 'POST', corpo: { fala, lat: ref?.lat, lon: ref?.lon }, timeout: 20000 }),
+  destino: (fala, ref) => chamar('/assistente/destino', { metodo: 'POST', corpo: { fala, lat: ref?.lat, lon: ref?.lon }, timeout: 25000 }),
   rota: (pedido) => chamar('/rotas', { metodo: 'POST', corpo: pedido, timeout: 25000 }),
   relatos: () => chamar('/relatos'),
   criarRelato: (form) => chamar('/relatos', { metodo: 'POST', form, timeout: 30000 }),
