@@ -62,6 +62,7 @@ demonstração e oferece **caminhada simulada**. Pendências e contratos de inte
 | `src/vision/` | Visão computacional (OpenCV.js) e LGPD — detalhes abaixo |
 | `api/` | FastAPI: `roteamento.py` (A* por perfil e preferências), `relatos.py`, `assistente.py`, `clima.py`, `adm.py` (painel) |
 | `src/adm/` | Painel Administrativo (`/adm`): indicadores, mapa por setor, gráficos, registros, moderação, exportação ZIP, instituições |
+| `painel-prefeitura/` | Painel de gestão da prefeitura em página única (abrir `index.html` no navegador, dados fictícios): visão geral, mapa, análises, registros, regiões críticas e exportação de fotos por área |
 | `src/embed/` | Widget "Como chegar com acessibilidade" (`/embed/<lugar>`) |
 | `api/app/entradas.py` | Melhor entrada (chegando) e melhor saída (saindo) por perfil: OSM + ORS Matrix + dados do lugar |
 | `api/app/ors.py` | OpenRouteService: rota para cadeira de rodas e matriz de distâncias (chave só no servidor) |

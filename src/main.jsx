@@ -9,6 +9,15 @@ import '@fontsource/atkinson-hyperlegible/700.css';
 //   /               o app do cidadão
 // Cada uma carrega só o próprio código e CSS (import dinâmico).
 // TODO: integrar service worker (PWA offline): guardar a última rota e as ruas do mapa para internet fraca.
+// ?inicio: começa do zero (boas-vindas e configuração), como na primeira vez. Útil para gravar a demonstração.
+{
+  const q = new URLSearchParams(location.search);
+  if (q.has('inicio')) {
+    try { localStorage.clear(); sessionStorage.clear(); } catch { /* sem armazenamento */ }
+    q.delete('inicio');
+    history.replaceState(null, '', location.pathname + (q.size ? `?${q}` : '') + location.hash);
+  }
+}
 const caminho = location.pathname;
 const raiz = createRoot(document.getElementById('raiz'));
 const montar = (no) => raiz.render(<StrictMode>{no}</StrictMode>);

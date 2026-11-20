@@ -131,7 +131,7 @@ h2 { font-size: calc(1.3rem * var(--escala)); font-weight: 700; }
 .botao-icone .icone { width: 30px; height: 30px; }
 .botao-icone.claro { border-color: currentColor; background: transparent; }
 .marca-icone { border-radius: 12px; display: block; }
-:root[data-tema='contraste'] .marca-icone rect { fill: var(--amarelo); }
+.marca-icone { object-fit: contain; flex: none; }
 
 .progresso { display: flex; gap: 8px; }
 .progresso span { flex: 1; height: 10px; border-radius: 5px; background: var(--borda-suave); }
@@ -1043,3 +1043,26 @@ img, video, canvas, svg { max-width: 100%; }
 .secao-saindo .chips { gap: 10px; }
 .secao-saindo .digitar { margin-top: 4px; }
 .dica-saindo { text-align: center; margin: 8px 0 0; }
+
+/* Câmera de demonstração (cena 2D): ocupa o visor como o vídeo da câmera. */
+.camera .camera-cena { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: 50% 60%; }
+
+/* v6.1: ajustes da auditoria no iPhone SE (375 x 667) */
+@media (max-width: 380px) {
+  .rodape-fixo { margin-left: -14px; margin-right: -14px; padding-left: 14px; padding-right: 14px; }
+}
+.barreiras-folha .linha-botoes .botao { font-size: calc(1rem * var(--escala)); gap: 8px; padding: 8px 10px; }
+.barreiras-folha .linha-botoes .botao .icone { width: 22px; height: 22px; }
+.tela-perfil.com-nome { gap: 8px; }
+.tela-perfil.com-nome .titulo-secao { font-size: calc(1.25rem * var(--escala)); }
+@media (max-height: 700px) {
+  .tela-perfil.com-nome .ficha-perfil { min-height: 60px; }
+  .tela-perfil.com-nome .ficha-pref { min-height: 54px; }
+  .tela-perfil.com-nome .campo-nome input { min-height: 48px; }
+}
+/* Navegação dentro da moldura do computador: sem os 16 px de sobra que rolavam. */
+@media (min-width: 600px) and (min-height: 600px) {
+  .app:has(.tela-navegacao) { overflow: hidden; padding-bottom: 0; }
+}
+/* A prévia da rota mostra sempre um bom pedaço do mapa: o painel vai até 64% e rola por dentro. */
+.rota-folha { max-height: 64%; }

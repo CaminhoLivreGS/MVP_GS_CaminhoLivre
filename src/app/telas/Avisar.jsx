@@ -6,6 +6,7 @@ import { canvasParaBlob } from '../../vision/VisionPipeline.js';
 import { CONFIG_VISAO, lerHashes, salvarHash } from '../configuracao.js';
 import { api } from '../servicos/api.js';
 import { falar, vibrar, VIBRA } from '../servicos/voz.js';
+import { cameraSimulada, gerarCenaBuraco } from '../servicos/cenaSimulada.js';
 
 // Um analisador para o app inteiro: o OpenCV (~10 MB) é baixado uma vez,
 // sob demanda, num Web Worker (a interface não trava).
@@ -39,6 +40,9 @@ const EVIDENCIA_PARA_TIPO = {
 /** Página 13: câmera com captura automática quando a imagem fica firme. */
 export function CameraAviso({ aoFoto, aoVoltar }) {
   const video = useRef(null);
+  const tela = useRef(null);       // câmera de demonstração: a "imagem ao vivo" é este canvas
+  const cena = useRef(null);       // a cena limpa (640x480) que vira a foto
+  const [simulada] = useState(cameraSimulada);
   const [estado, setEstado] = useState('abrindo'); // abrindo | mirando | firme | sem_camera
   const fala = 'Aponte a câmera para o problema. Eu tiro a foto sozinho quando a imagem ficar firme.';
 
@@ -46,7 +50,45 @@ export function CameraAviso({ aoFoto, aoVoltar }) {
     obterAnalisador().preparar().catch(() => {});
     let stream;
     let timer;
+    let quadro;
     let vivo = true;
+    if (simulada) {
+      // Câmera de demonstração: pede a permissão como a de verdade (o navegador mostra o pedido),
+      // libera o sensor na hora e mostra a cena 2D de um buraco na calçada, com tremor de mão
+      // por 1,6 s; depois fica firme e tira a foto sozinha, igual ao fluxo real.
+      (async () => {
+        try {
+          const s = await navigator.mediaDevices?.getUserMedia({ video: true, audio: false });
+          s?.getTracks().forEach((t) => t.stop());
+        } catch { /* sem permissão: segue com a cena mesmo assim */ }
+        if (!vivo || !tela.current) return;
+        const { data, largura, altura } = gerarCenaBuraco();
+        const c = document.createElement('canvas');
+        c.width = largura; c.height = altura;
+        c.getContext('2d').putImageData(new ImageData(data, largura, altura), 0, 0);
+        cena.current = c;
+        tela.current.width = largura; tela.current.height = altura;
+        tela.current.getContext('2d').drawImage(c, 0, 0);
+        setEstado('mirando');
+        const ini = performance.now();
+        const animar = (agora) => {
+          if (!vivo) return;
+          const t = agora - ini;
+          const el = tela.current;
+          if (t < 1600) {
+            const k = 1 - t / 1600; // tremor diminui até parar
+            el.style.transform = `translate(${Math.sin(t / 90) * 6 * k}px, ${Math.cos(t / 130) * 5 * k}px) rotate(${Math.sin(t / 210) * 0.8 * k}deg) scale(1.04)`;
+          } else {
+            el.style.transform = 'scale(1.04)';
+            setEstado('firme');
+            if (t > 2700) { capturar(); return; }
+          }
+          quadro = requestAnimationFrame(animar);
+        };
+        quadro = requestAnimationFrame(animar);
+      })();
+      return () => { vivo = false; cancelAnimationFrame(quadro); };
+    }
     (async () => {
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1600 } }, audio: false });
@@ -86,6 +128,13 @@ export function CameraAviso({ aoFoto, aoVoltar }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   function capturar() {
+    if (simulada) {
+      if (!cena.current) return;
+      vibrar(VIBRA.manobra);
+      falar('Foto tirada.');
+      cena.current.toBlob((b) => b && aoFoto(b), 'image/jpeg', 0.95);
+      return;
+    }
     const v = video.current;
     if (!v?.videoWidth) return;
     const c = document.createElement('canvas');
@@ -105,7 +154,9 @@ export function CameraAviso({ aoFoto, aoVoltar }) {
         <Aviso tipo="info" icone="camera">A câmera não abriu. Você pode escolher uma foto da galeria.</Aviso>
       ) : (
         <div className="camera">
-          <video ref={video} playsInline muted aria-hidden="true" />
+          {simulada
+            ? <canvas ref={tela} className="camera-cena" aria-hidden="true" />
+            : <video ref={video} playsInline muted aria-hidden="true" />}
           <CaixaFala titulo="Aponte a câmera para o problema." escura />
           <div className="camera-moldura" aria-hidden="true" />
           <p className="camera-status" role="status">
@@ -149,6 +200,17 @@ export function TipoAviso({ foto, posicao, aoEnviado, aoVoltar, aoRefazer }) {
   const resultado = useRef(null);
   const miniatura = useRef(null);
 
+  // Miniatura da foto que será enviada (já anonimizada). Desenha depois que o canvas existe na tela:
+  // antes, ela era desenhada no mesmo instante da troca de fase e ficava sempre em branco.
+  useEffect(() => {
+    const c = resultado.current?.processedCanvas;
+    if (fase !== 'pronto' || !miniatura.current || !c) return;
+    const ctx = miniatura.current.getContext('2d');
+    miniatura.current.width = 192; miniatura.current.height = 192;
+    const lado = Math.min(c.width, c.height);
+    ctx.drawImage(c, (c.width - lado) / 2, (c.height - lado) / 2, lado, lado, 0, 0, 192, 192);
+  }, [fase]);
+
   useEffect(() => {
     let vivo = true;
     falar('Estou olhando a foto. Já te digo o que parece.');
@@ -182,13 +244,6 @@ export function TipoAviso({ foto, posicao, aoEnviado, aoVoltar, aoRefazer }) {
         setFase('pronto');
         const t = TIPOS_AVISO.find((x) => x.id === tipo);
         falar(t ? `Parece ${t.falar}. Está certo? A inteligência artificial só sugere. Você decide.` : 'Não consegui reconhecer o problema na foto. Escolha o tipo do problema.');
-        if (miniatura.current && resultado.current.processedCanvas) {
-          const c = resultado.current.processedCanvas;
-          const ctx = miniatura.current.getContext('2d');
-          miniatura.current.width = 192; miniatura.current.height = 192;
-          const lado = Math.min(c.width, c.height);
-          ctx.drawImage(c, (c.width - lado) / 2, (c.height - lado) / 2, lado, lado, 0, 0, 192, 192);
-        }
       } catch (e) {
         if (!vivo) return;
         // Sem visão (celular antigo, sem WebAssembly): segue sem foto, a pessoa escolhe.

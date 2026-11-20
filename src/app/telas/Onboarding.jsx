@@ -120,7 +120,7 @@ export function Perfil({ perfis, preferencias = [], nome = '', comNome = false, 
   };
   const pronto = sel.length > 0 && (!comNome || apelido.trim());
   return (
-    <Tela fala={fala} fixa className="tela-perfil">
+    <Tela fala={fala} fixa className={`tela-perfil ${comNome ? 'com-nome' : ''}`}>
       <Cabecalho titulo={comNome ? 'Novo perfil' : 'Seu perfil'} aoVoltar={aoVoltar} fala={fala} />
       {passo && <Progresso passo={passo} total={total} />}
       {comNome && (

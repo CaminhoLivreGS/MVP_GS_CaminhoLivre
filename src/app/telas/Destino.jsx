@@ -106,12 +106,13 @@ export function Home({ clima, salvos, origem, local, avisoOrigem, aoFalar, aoDig
           {aoBarreiras && (
             <button type="button" className="atalho" onClick={() => aoBarreiras()}>
               <span className="atalho-num" aria-hidden="true">{perto.length}</span>
-              <span>{perto.length === 1 ? 'barreira perto' : 'barreiras perto'}</span>
+              <span className="so-leitor">{perto.length === 1 ? 'barreira perto' : 'barreiras perto'}. Ver no mapa</span>
+              <span aria-hidden="true">Barreiras</span>
             </button>
           )}
           {aoSaindo && (
             <button type="button" className="atalho" onClick={aoSaindo}>
-              <Icone nome="saida" /><span>{saindoDe ? `Saindo do ${saindoDe.nome}` : 'Estou saindo de um lugar'}</span>
+              <Icone nome="saida" /><span>{saindoDe ? `Saindo do ${saindoDe.nome}` : 'Estou saindo'}</span>
             </button>
           )}
         </div>

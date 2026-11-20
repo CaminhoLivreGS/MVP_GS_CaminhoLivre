@@ -11,6 +11,15 @@
  */
 import { Polilinha, distancia, rumo } from './geo.js';
 
+// Localização fixa (gravação de vídeo / demonstração sem expor o endereço real):
+// VITE_LOCAL_FIXO="lat,lon,Nome" no .env.local. Com ela, o GPS do aparelho NUNCA é consultado.
+function lerLocalFixo(txt) {
+  const [lat, lon, ...nome] = String(txt ?? '').split(',');
+  const p = { lat: Number(lat), lon: Number(lon), nome: nome.join(',').trim() || 'Você' };
+  return Number.isFinite(p.lat) && Number.isFinite(p.lon) && lat.trim() && lon.trim() ? p : null;
+}
+export const LOCAL_FIXO = lerLocalFixo(import.meta.env?.VITE_LOCAL_FIXO);
+
 export const ERROS_GPS = {
   1: 'PERMISSAO_NEGADA',
   2: 'SEM_SINAL',
@@ -32,6 +41,10 @@ export class FonteGPS {
   }
 
   iniciar(aoMudar, aoErro = () => {}) {
+    if (LOCAL_FIXO) {
+      aoMudar({ lat: LOCAL_FIXO.lat, lon: LOCAL_FIXO.lon, precisao: 5, t: Date.now(), rumo: null, velocidade: 0, simulada: false });
+      return;
+    }
     if (!this.geo) {
       aoErro({ codigo: 'SEM_SUPORTE' });
       return;
@@ -72,6 +85,7 @@ export class FonteGPS {
   /** Uma leitura só (para a tela inicial): Promise<pos>. */
   static obterUmaVez({ timeout = 12000, geo = globalThis.navigator?.geolocation } = {}) {
     return new Promise((resolve, reject) => {
+      if (LOCAL_FIXO) return resolve({ lat: LOCAL_FIXO.lat, lon: LOCAL_FIXO.lon, precisao: 5, t: Date.now() });
       if (!geo) return reject({ codigo: 'SEM_SUPORTE' });
       geo.getCurrentPosition(
         ({ coords, timestamp }) => resolve({ lat: coords.latitude, lon: coords.longitude, precisao: coords.accuracy, t: timestamp }),

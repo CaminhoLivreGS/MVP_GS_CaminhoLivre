@@ -16,7 +16,7 @@ import { distancia } from '../localizacao/geo.js';
 import { Celular } from './componentes/Celular.jsx';
 import { aoMudarModoDemo, api, definirDispositivo, emModoDemo, guardarRota } from './servicos/api.js';
 import { configurarVibracao, configurarVoz, falar, temVozPortugues } from './servicos/voz.js';
-import { FonteGPS } from '../localizacao/fontes.js';
+import { FonteGPS, LOCAL_FIXO } from '../localizacao/fontes.js';
 
 const params = new URLSearchParams(location.search);
 // Demonstração reproduzível: ?chuva=simular força chuva forte; ?chuva=nao ignora a previsão real.
@@ -130,7 +130,8 @@ export function App() {
           FonteGPS.obterUmaVez({ timeout: 10000 }),
           new Promise((_, rej) => setTimeout(() => rej({ codigo: 'DEMOROU' }), 15000)),
         ]);
-        o = { ...p, nome: 'Você', fonte: 'gps' };
+        // Local fixo: 'fixo' (não 'gps') faz a rota começar em modo simulação, andando pelo caminho.
+        o = { ...p, nome: 'Você', fonte: LOCAL_FIXO ? 'fixo' : 'gps' };
       } catch (err) {
         if (vivo) setAvisoOrigem(err?.codigo === 'PERMISSAO_NEGADA'
           ? 'Localização não liberada: partida de demonstração na Vila Yara.'

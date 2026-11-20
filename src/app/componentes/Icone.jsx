@@ -69,14 +69,6 @@ export function Icone({ nome, className = '', titulo }) {
 
 /** Marca: 4 pontos (Braille) + caminho. */
 export function Marca({ tamanho = 44 }) {
-  return (
-    <svg className="marca-icone" width={tamanho} height={tamanho} viewBox="0 0 48 48" aria-hidden="true">
-      <rect width="48" height="48" rx="12" fill="var(--amarelo)" />
-      <g fill="var(--escuro)">
-        <circle cx="12" cy="31" r="2.3" /><circle cx="18" cy="31" r="2.3" /><circle cx="12" cy="37" r="2.3" /><circle cx="18" cy="37" r="2.3" />
-      </g>
-      <path d="M22 37h2.5a4.5 4.5 0 0 0 4.5-4.5V20a5 5 0 0 1 5-5" fill="none" stroke="var(--escuro)" strokeWidth="5" strokeLinecap="round" />
-      <circle cx="35" cy="14" r="5" fill="var(--escuro)" />
-    </svg>
-  );
+  // Logo oficial (public/logo.png, gerada da arte com fundo transparente).
+  return <img className="marca-icone" src="/logo.png" width={tamanho} height={tamanho} alt="" aria-hidden="true" draggable="false" />;
 }

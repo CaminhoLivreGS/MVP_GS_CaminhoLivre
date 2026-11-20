@@ -199,6 +199,16 @@ describe('analisarImageData', () => {
     assert.ok(r.detalhes.problemas.includes('BURACO_OU_QUEBRA'));
   });
 
+  test('cena da câmera de demonstração (buraco 2D) é CONFIRMADA em ACESSIBILIDADE', async () => {
+    const { gerarCenaBuraco } = await import('../src/app/servicos/cenaSimulada.js');
+    for (const [largura, altura] of [[640, 480]]) { // tamanho que a câmera simulada entrega
+      const c = gerarCenaBuraco({ largura, altura });
+      const r = await P.analisarImageData(new ImageData(c.data, largura, altura), 'ACESSIBILIDADE');
+      assert.equal(r.status, STATUS.CONFIRMADO, JSON.stringify({ largura, motivos: r.motivos, problemas: r.detalhes.problemas }));
+      assert.ok(r.detalhes.problemas.includes('BURACO_OU_QUEBRA'));
+    }
+  });
+
   /*
    * Detecção de vazamento (heurística, em duas camadas):
    *  1. heap do WASM não pode crescer — pega sempre vazamentos do tamanho de
