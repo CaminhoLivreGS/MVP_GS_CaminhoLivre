@@ -56,13 +56,19 @@ const ICONES = {
   voce: icone('pin-voce'),
   destino: icone('pin-destino'),
   perigo: icone('pin-perigo', '!'),
+  // mapa de barreiras: confirmado (!), em verificação (?), selecionado (anel)
+  verificacao: icone('pin-perigo pin-verificacao', '?'),
+  perigo_sel: icone('pin-perigo pin-selecionado', '!'),
+  verificacao_sel: icone('pin-perigo pin-verificacao pin-selecionado', '?'),
 };
 
 // focoAcima: no modo 'seguir', desloca a pessoa do centro (fração da altura; negativo = mais
 // abaixo), para não ficar escondida atrás do que flutua sobre o mapa.
 // aoSoltar: a pessoa arrastou o mapa (para de seguir). recentrar: mude o número para voltar a seguir.
 export function Mapa({ coords = [], comum = null, marcadores = [], posicao = null, modo = 'visao', rotulo, altura = 'media',
-  zoomSeguir = 18, focoAcima = 0, aoSoltar, recentrar = 0 }) {
+  zoomSeguir = 18, focoAcima = 0, aoSoltar, recentrar = 0, aoTocarMarcador, margemInferior = 0, margemTopo = 0 }) {
+  const tocar = useRef(aoTocarMarcador);
+  tocar.current = aoTocarMarcador;
   const div = useRef(null);
   const livre = useRef(false);
   const ultimo = useRef({ modo, aoSoltar, posicao });
@@ -71,6 +77,8 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
   const camadas = useRef(null);
   const tiles = useRef(null);
   const enquadrado = useRef(false);
+  // mapa de barreiras: trocar o marcador selecionado não deve reenquadrar o mapa
+  const manterEnquadramento = useRef(false);
 
   // cria o mapa uma vez
   useEffect(() => {
@@ -116,10 +124,14 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
       L.marker(coords.at(-1), { icon: ICONES.destino, interactive: false, keyboard: false }).addTo(g);
     }
     for (const mk of marcadores) {
-      L.marker([mk.lat, mk.lon], { icon: ICONES[mk.tipo] ?? ICONES.perigo, interactive: false, keyboard: false }).addTo(g);
+      // Tocável só quando a tela oferece a mesma ação numa lista acessível (o mapa é aria-hidden).
+      const clicavel = Boolean(tocar.current && mk.id);
+      const m2 = L.marker([mk.lat, mk.lon], { icon: ICONES[mk.tipo] ?? ICONES.perigo, interactive: clicavel, keyboard: false }).addTo(g);
+      if (clicavel) m2.on('click', () => tocar.current?.(mk.id));
     }
-    enquadrado.current = false;
-  }, [chaveRota, comum, marcadores.map((x) => `${x.lat},${x.lon}`).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!manterEnquadramento.current) enquadrado.current = false;
+    manterEnquadramento.current = Boolean(tocar.current);
+  }, [chaveRota, comum, marcadores.map((x) => `${x.lat},${x.lon},${x.tipo}`).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // você (atualiza sem redesenhar a rota) + câmera
   const voce = useRef(null);
@@ -142,8 +154,13 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
     }
     if (enquadrado.current) return;
     const pts = [...coords, ...marcadores.map((x) => [x.lat, x.lon]), ...(posicao ? [[posicao.lat, posicao.lon]] : [])];
-    if (pts.length === 1) m.setView(pts[0], 16);
-    else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { padding: [28, 28], maxZoom: 17 });
+    // margemInferior (fração da altura) e margemTopo (px): espaço coberto pelos painéis flutuantes.
+    const baixo = 28 + m.getSize().y * margemInferior;
+    const topo = 28 + margemTopo;
+    if (pts.length === 1) {
+      m.setView(pts[0], 16);
+      if (margemInferior || margemTopo) m.panBy([0, (baixo - topo) / 2], { animate: false });
+    } else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [28, topo], paddingBottomRight: [28, baixo], maxZoom: 17 });
     enquadrado.current = pts.length > 0;
   }, [posicao?.lat, posicao?.lon, modo, chaveRota]); // eslint-disable-line react-hooks/exhaustive-deps
 

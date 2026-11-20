@@ -200,7 +200,7 @@ def avaliar(e: dict, perfis) -> tuple[str | None, float, list[str]]:
             return f"a passagem é estreita ({round(e['largura_m'] * 100)} cm)", 0, []
         if e.get("degraus") is None and not (e.get("rampa") or e.get("elevador")):
             pen += 150  # sem informação: só se não houver opção melhor
-    if "bengala" in perfis:
+    if "bengala" in perfis or "muletas" in perfis:
         if e.get("degraus") and not (e.get("rampa") or e.get("elevador")):
             pen += 40 * e["degraus"]
         if e.get("porta") == "giratoria":

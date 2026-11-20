@@ -9,7 +9,9 @@ export const VozContexto = createContext({ ativa: true, alternar: () => {}, semV
  * Tela: ao abrir, leva o foco ao título (leitor de tela começa por ele)
  * e fala o texto principal (`fala`), se a voz estiver ligada.
  */
-export function Tela({ children, fala, className = '', rotulo }) {
+// fixa: a tela ocupa exatamente a altura do aparelho e não rola (padrão Google Maps/Waze:
+// mapa ao fundo, painéis por cima). Sem fixa: telas de lista/formulário, que podem rolar.
+export function Tela({ children, fala, className = '', rotulo, fixa = false }) {
   const ref = useRef(null);
   useEffect(() => {
     window.scrollTo({ top: 0 });
@@ -19,7 +21,7 @@ export function Tela({ children, fala, className = '', rotulo }) {
     if (fala) falar(fala);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <main ref={ref} className={`tela ${className}`.trim()} aria-label={rotulo}>
+    <main ref={ref} className={`tela ${fixa ? 'tela-fixa' : ''} ${className}`.replace(/\s+/g, ' ').trim()} aria-label={rotulo}>
       {children}
     </main>
   );
@@ -115,8 +117,9 @@ export function Botao({ children, icone, variante = 'primario', className = '', 
   );
 }
 
-export function Rodape({ children }) {
-  return <div className="rodape-acoes">{children}</div>;
+// fixo: em telas que rolam (formulários), o botão principal fica sempre visível no pé da tela.
+export function Rodape({ children, fixo = false }) {
+  return <div className={`rodape-acoes ${fixo ? 'rodape-fixo' : ''}`.trim()}>{children}</div>;
 }
 
 export function Carregando({ texto = 'Carregando…' }) {

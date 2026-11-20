@@ -1,0 +1,23 @@
+/* Widget para sites de instituições: claro, compacto, alto contraste, sem depender do CSS do app. */
+.embed { --texto: #1b1c1e; --texto-2: #4b4e53; --borda: #dcd4c4; --verde: #005a4e; --verde-claro: #d3ebe4; --amarelo: #ffc20e;
+  --escuro: #24272b; --ruim: #a33d00;
+  font-family: 'Atkinson Hyperlegible', system-ui, sans-serif; color: var(--texto); background: #fff; padding: 16px;
+  min-height: 100vh; box-sizing: border-box; font-size: 15px; line-height: 1.4; color-scheme: light; }
+body:has(.embed) { margin: 0; background: #fff; }
+.embed header { display: flex; gap: 12px; align-items: center; }
+.embed .sobre { margin: 0; font-size: 0.8rem; font-weight: 700; color: var(--verde); text-transform: uppercase; letter-spacing: 0.04em; }
+.embed h1 { margin: 0; font-size: 1.25rem; line-height: 1.2; }
+.embed h2 { font-size: 1rem; margin: 14px 0 8px; }
+.embed .endereco { margin: 8px 0 0; color: var(--texto-2); }
+.embed .entradas { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.embed .entradas > li { border: 2px solid var(--borda); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.embed .entradas > li.acessivel { border-color: var(--verde); background: var(--verde-claro); }
+.embed .selo { font-size: 0.85rem; font-weight: 700; }
+.embed .acessivel .selo { color: var(--verde); }
+.embed .atributos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px; }
+.embed .atributos li { font-size: 0.8rem; padding: 1px 8px; border-radius: 999px; background: #fff; border: 1px solid var(--borda); }
+.embed .atributos li.ruim { color: var(--ruim); border-color: currentColor; font-weight: 700; }
+.embed .botao-rota { display: flex; justify-content: center; align-items: center; min-height: 52px; margin-top: 14px; border-radius: 14px;
+  background: var(--amarelo); color: #1b1c1e; font-weight: 700; text-decoration: none; font-size: 1.05rem; border: 2px solid #1b1c1e; }
+.embed .botao-rota:focus-visible { outline: 3px solid #1f5fbf; outline-offset: 2px; }
+.embed .rodape { font-size: 0.8rem; color: var(--texto-2); margin: 10px 0 0; }

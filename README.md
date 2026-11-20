@@ -38,6 +38,10 @@ Plano gratuito: o serviço "dorme" após 15 min sem acesso (o primeiro acesso le
 volta ao estado inicial a cada novo deploy (os relatos de demonstração são recriados).
 Para testar a mesma imagem localmente: `docker build -f Dockerfile.render -t caminho-livre . && docker run -p 8090:8090 caminho-livre`.
 
+**Três entradas no mesmo app:** `/` (cidadão), **`/adm`** (Painel Administrativo da prefeitura; local sem token configurado: `adm-demo`)
+e **`/embed/<lugar>`** (widget "Como chegar com acessibilidade" para o site de instituições, ex.: `/embed/shopping-uniao-osasco`).
+O que o pitch promete e onde está no app: [`docs/PITCH_X_MVP.md`](docs/PITCH_X_MVP.md).
+
 Demo reproduzível: `http://127.0.0.1:8000/?chuva=nao` (ou `?chuva=simular`). Fora do território, o app usa a "Casa" de
 demonstração e oferece **caminhada simulada**. Pendências e contratos de integração: [`docs/PENDENCIAS.md`](docs/PENDENCIAS.md).
 
@@ -46,7 +50,9 @@ demonstração e oferece **caminhada simulada**. Pendências e contratos de inte
 | `src/app/` | Telas do guia visual (React), serviços de voz, API e preferências |
 | `src/localizacao/` | Sistema de localização: `geo.js`, `fontes.js` (GPS/simulada), `MotorNavegacao.js` |
 | `src/vision/` | Visão computacional (OpenCV.js) e LGPD — detalhes abaixo |
-| `api/` | FastAPI: `roteamento.py` (A* por perfil), `relatos.py`, `assistente.py`, `clima.py` |
+| `api/` | FastAPI: `roteamento.py` (A* por perfil e preferências), `relatos.py`, `assistente.py`, `clima.py`, `adm.py` (painel) |
+| `src/adm/` | Painel Administrativo (`/adm`): indicadores, mapa por setor, gráficos, registros, moderação, exportação ZIP, instituições |
+| `src/embed/` | Widget "Como chegar com acessibilidade" (`/embed/<lugar>`) |
 | `api/app/entradas.py` | Melhor entrada (chegando) e melhor saída (saindo) por perfil: OSM + ORS Matrix + dados do lugar |
 | `api/app/ors.py` | OpenRouteService: rota para cadeira de rodas e matriz de distâncias (chave só no servidor) |
 

@@ -20,7 +20,11 @@ const NOME_CURTO = {
   sem_rampa: 'Falta de rampa', alagamento: 'Alagamento', luz_apagada: 'Luz apagada', obra: 'Obra na calçada',
 };
 
-/** Página 7: a rota, com o porquê de cada desvio. */
+/**
+ * Página 7: a rota, com o porquê de cada desvio. Padrão Google Maps: o mapa ocupa a tela e um
+ * painel embaixo resume tempo, escadas e desvios, com "Começar rota" sempre visível. Os detalhes
+ * (avisos e entrada) abrem dentro do painel, que rola sozinho; a tela em si não rola.
+ */
 export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
   const [simular, setSimular] = useState(origem?.fonte !== 'gps');
   const [verAvisos, setVerAvisos] = useState(false);
@@ -35,45 +39,64 @@ export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
     ...rota.desvios.filter((x) => x.lat).map((x, i) => ({ id: `d${i}`, lat: x.lat, lon: x.lon, tipo: 'perigo' })),
     ...rota.alertas_no_caminho.map((a) => ({ id: a.id, lat: a.lat, lon: a.lon, tipo: 'perigo' })),
   ];
-  const sub = semDados ? 'Aqui ainda não tenho dados de calçada e escada. Vá com atenção.'
-    : motivo ? null : 'Não encontrei problemas avisados nesse caminho.';
+  const resumo = semDados ? 'Aqui ainda não tenho dados de calçada e escada. Vá com atenção.'
+    : motivo ?? 'Não encontrei problemas avisados nesse caminho.';
+  const chegada = new Date(Date.now() + rota.duracao_min * 60000).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   return (
-    <Tela fala={fala}>
-      <Cabecalho titulo="Sua rota" aoVoltar={aoVoltar} fala={fala} />
+    <Tela fala={fala} fixa className="tela-rota">
       <Titulo className="so-leitor">Sua rota até {rota.destino.nome}</Titulo>
-      <div className="mapa-flex">
+      <div className="rota-mapa">
         <Mapa coords={rota.geometria.coords} comum={rota.desvios.length ? rota.rota_comum.coords : null} marcadores={marcadores}
-          posicao={{ lat: o[0], lon: o[1] }}
+          posicao={{ lat: o[0], lon: o[1] }} altura="cheia" margemInferior={0.5}
           rotulo={`Mapa: caminho de ${formatarDistancia(rota.distancia_m)} até ${rota.destino.nome}. Em verde, o caminho escolhido; tracejado laranja, o caminho mais curto evitado.`} />
       </div>
-      <div className="numeros">
-        <div className="numero"><strong>{rota.duracao_min} min</strong><span>a pé</span></div>
-        <div className="numero"><strong>{semDados ? '?' : rota.escadas}</strong><span>{rota.escadas === 1 ? 'escada' : 'escadas'}</span></div>
-        <div className="numero"><strong>{rota.desvios.length}</strong><span>{rota.desvios.length === 1 ? 'desvio' : 'desvios'}</span></div>
+      <div className="flutuante-topo">
+        <button type="button" className="botao-redondo" onClick={aoVoltar} aria-label="Voltar"><Icone nome="voltar" /></button>
+        <p className="pilula pilula-destino"><Icone nome="lugar" /><span>{rota.destino.nome}</span></p>
+        <BotaoSom fala={fala} />
       </div>
-      {entrada?.escolhida && (
-        <CartaoEntrada entrada={entrada.escolhida} dadosExemplo={entrada.dados_exemplo} fechado={entrada.fechado_agora}
-          descartadas={entrada.descartadas} />
-      )}
-      {rota.fonte_dados === 'ors' && <p className="nota">Caminho calculado pelo OpenRouteService (evita escadas).</p>}
-      <CaixaFala titulo={motivo ?? `São ${formatarDistancia(rota.distancia_m)} a pé.`}>
-        {sub}
-        {avisos.length > 0 && (
-          <button type="button" className="link-avisos" aria-expanded={verAvisos} onClick={() => setVerAvisos((v) => !v)}>
-            {verAvisos ? 'Esconder avisos' : `Ver ${avisos.length} ${avisos.length === 1 ? 'aviso' : 'avisos'} do caminho`}
-          </button>
-        )}
-        {verAvisos && <ul className="lista-avisos">{avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>}
-      </CaixaFala>
-      <Rodape>
-        <Botao icone="caminho" onClick={() => aoComecar({ simular })}>Começar rota</Botao>
-        <div className="linha-botoes">
-          <a className="botao secundario" href={linkMapa} target="_blank" rel="noopener noreferrer"><Icone nome="mapa" /><span>App de mapa</span></a>
-          <button type="button" className="botao secundario" aria-pressed={simular} onClick={() => setSimular((v) => !v)}>
-            <Icone nome={simular ? 'check' : 'caminho'} /><span>{simular ? 'Simulando' : 'Simular'}</span>
-          </button>
+
+      <section className="folha rota-folha" aria-label="Resumo da rota">
+        <div className="rota-resumo">
+          <p className="rota-tempo"><strong>{rota.duracao_min} min</strong> <span>{formatarDistancia(rota.distancia_m)} · chega {chegada}</span></p>
+          <ul className="rota-numeros" aria-label="Números do caminho">
+            <li><strong>{semDados ? '?' : rota.escadas}</strong> {rota.escadas === 1 ? 'escada' : 'escadas'}</li>
+            <li><strong>{rota.desvios.length}</strong> {rota.desvios.length === 1 ? 'desvio' : 'desvios'}</li>
+            <li><strong>{rota.alertas_no_caminho.length}</strong> {rota.alertas_no_caminho.length === 1 ? 'aviso' : 'avisos'}</li>
+          </ul>
         </div>
-      </Rodape>
+        <div className="folha-rolavel">
+          {rota.criterios?.length > 0 && (
+            <ul className="chips criterios-rota" aria-label="O que esta rota levou em conta">
+              {rota.criterios.map((c) => <li key={c} className="chip"><Icone nome="check" />{c}</li>)}
+            </ul>
+          )}
+          <p className="rota-motivo"><Icone nome={motivo ? 'alerta' : 'ok'} />{resumo}</p>
+          {rota.fonte_dados === 'ors' && <p className="nota">Caminho calculado pelo OpenRouteService (evita escadas).</p>}
+          {avisos.length > 0 && (
+            <button type="button" className="link-avisos" aria-expanded={verAvisos} onClick={() => setVerAvisos((v) => !v)}>
+              {verAvisos ? 'Esconder avisos' : `Ver ${avisos.length} ${avisos.length === 1 ? 'aviso' : 'avisos'} do caminho`}
+            </button>
+          )}
+          {verAvisos && <ul className="lista-avisos">{avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>}
+          {entrada?.escolhida && (
+            <details className="detalhe-entrada">
+              <summary><Icone nome="porta" /><span><span className="rotulo-pequeno">Entrada recomendada</span>{entrada.escolhida.nome}</span></summary>
+              <CartaoEntrada entrada={entrada.escolhida} dadosExemplo={entrada.dados_exemplo} fechado={entrada.fechado_agora}
+                descartadas={entrada.descartadas} />
+            </details>
+          )}
+        </div>
+        <div className="rota-acoes">
+          <Botao icone="caminho" onClick={() => aoComecar({ simular })}>{simular ? 'Começar (simulação)' : 'Começar rota'}</Botao>
+          <div className="linha-botoes">
+            <button type="button" className="botao secundario" aria-pressed={simular} onClick={() => setSimular((v) => !v)}>
+              <Icone nome={simular ? 'check' : 'play'} /><span>Simular</span>
+            </button>
+            <a className="botao secundario" href={linkMapa} target="_blank" rel="noopener noreferrer"><Icone nome="mapa" /><span>Outro app</span></a>
+          </div>
+        </div>
+      </section>
     </Tela>
   );
 }
@@ -300,7 +323,7 @@ function TelaAlerta({ alerta, distancia, aoEntender }) {
   const acao = alerta.lado_seguro ? `Siga pela ${alerta.lado_seguro}` : 'Vá com cuidado';
   const fala = `Atenção. ${titulo} ${acao}.`;
   return (
-    <Tela className="tela-alerta" rotulo="Atenção">
+    <Tela fixa className="tela-alerta" rotulo="Atenção">
       <div className="cabecalho">
         <span className="selo-atencao"><Icone nome="alerta" />Atenção</span><span />
         <BotaoSom fala={fala} claro />
@@ -331,7 +354,7 @@ function PerguntaComunidade({ alerta, aoFim }) {
     aoFim();
   };
   return (
-    <Tela fala={`${pergunta} Sua resposta ajuda a decidir se o trecho fica fora das rotas.`}>
+    <Tela fala={`${pergunta} Sua resposta ajuda a decidir se o trecho fica fora das rotas.`} fixa>
       <Cabecalho titulo="Ajude quem vem depois" aoVoltar={aoFim} fala={pergunta} />
       <Mapa coords={[]} marcadores={[{ id: alerta.id, lat: alerta.lat, lon: alerta.lon, tipo: 'perigo' }]} posicao={{ lat: alerta.lat - 0.00008, lon: alerta.lon }}
         altura="pequena" rotulo="Mapa do ponto avisado" />
@@ -367,7 +390,7 @@ export function Chegada({ resumo, prefs, aoFim }) {
     try { await navigator.share({ title: 'Caminho Livre', text: texto, url }); } catch { /* cancelado */ }
   };
   return (
-    <Tela className="tela-chegada" fala={fala}>
+    <Tela fixa className="tela-chegada" fala={fala}>
       <div className="cabecalho"><span /><span /><BotaoSom fala={fala} claro /></div>
       <Icone nome="lugar" className="icone-grande" />
       <Titulo>Você chegou em {nome}.</Titulo>

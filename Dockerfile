@@ -53,6 +53,7 @@ RUN apk upgrade --no-cache && rm -rf /var/cache/apk/*
 # Configuração do servidor (headers de segurança, /healthz, métricas internas).
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY docker/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY docker/nginx/security-headers-embed.conf /etc/nginx/snippets/security-headers-embed.conf
 
 # Artefatos estáticos: pertencem ao root e são só leitura para o nginx.
 COPY --from=build /app/dist /usr/share/nginx/html

@@ -18,15 +18,15 @@ from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field
 
-from . import assistente, clima, config, entradas, ors, osm_ao_vivo
+from . import adm, assistente, clima, config, entradas, ors, osm_ao_vivo
 from .grafo import Grafo, distancia_m
 from .lugares import TIPO_LLM_PARA_CATEGORIA, Lugares, categoria_do_texto, tokens
 from .relatos import ErroRelato, Relatos
-from .roteamento import PERFIS, VELOCIDADE_MS, Contexto, SemRota, calcular, fala_resumo
+from .roteamento import PERFIS, VELOCIDADE_MS, Contexto, SemRota, calcular, criterios_rota, fala_resumo
 
 logging.basicConfig(level=logging.INFO, format='{"t":"%(asctime)s","nivel":"%(levelname)s","msg":%(message)s}')
 log = logging.getLogger("caminho_livre")
@@ -36,7 +36,8 @@ app = FastAPI(title="Caminho Livre API", version="1.0.0", docs_url="/api/docs", 
 
 GRAFO = Grafo(config.DADOS_DIR / "grafo.json")
 LUGARES = Lugares(config.DADOS_DIR / "lugares.json")
-RELATOS = Relatos(config.DB_PATH, config.DADOS_DIR / "relatos_seed.json" if config.SEMEAR_RELATOS else None)
+RELATOS = Relatos(config.DB_PATH, config.DADOS_DIR / "relatos_seed.json" if config.SEMEAR_RELATOS else None,
+                  fotos_dir=config.FOTOS_DIR, fotos_demo=config.FOTOS_DEMO_DIR)
 BASE = assistente.BaseConhecimento(config.CONTEXTO)
 LOCAIS = entradas.Locais(config.DADOS_DIR / "locais_detalhados.json")
 QUALIDADE = json.loads((config.DADOS_DIR / "qualidade.json").read_text(encoding="utf-8"))
@@ -88,10 +89,22 @@ CABECALHOS_SEGURANCA = {
 }
 
 
+# O widget "Como chegar com acessibilidade" (/embed/<lugar>) é feito para ser colocado
+# num <iframe> no site da instituição: só ele pode ser emoldurado por outros sites.
+CSP_EMBED = CABECALHOS_SEGURANCA["Content-Security-Policy"].replace("frame-ancestors 'none'", "frame-ancestors *")
+
+
 @app.middleware("http")
 async def seguranca(request: Request, call_next):
     resp = await call_next(request)
+    embed = request.url.path.startswith("/embed/")
     for k, v in CABECALHOS_SEGURANCA.items():
+        if embed and k == "X-Frame-Options":
+            continue
+        if embed and k == "Content-Security-Policy":
+            v = CSP_EMBED
+        if embed and k == "Cross-Origin-Resource-Policy":
+            v = "cross-origin"
         resp.headers.setdefault(k, v)
     return resp
 
@@ -151,7 +164,9 @@ class Ponto(BaseModel):
 class PedidoRota(BaseModel):
     origem: Ponto
     destino: Ponto
-    perfis: list[Literal["bengala", "cadeira", "baixa_visao", "sem_apoio"]] = ["sem_apoio"]
+    perfis: list[Literal["bengala", "cadeira", "muletas", "baixa_visao", "sem_apoio"]] = ["sem_apoio"]
+    # Preferências que valem para qualquer perfil: nunca escada, caminho plano, ruas iluminadas.
+    preferencias: list[Literal["sem_escada", "plano", "iluminado"]] = []
     idoso: bool = False
     chuva: Literal["auto", "simular", "nao"] = "auto"
     explicar: bool = True
@@ -259,7 +274,7 @@ def rota(p: PedidoRota):
     if p.chuva != "nao":
         tempo = clima.resumo(p.origem.lat, p.origem.lon, simular_chuva=p.chuva == "simular")
     ctx = Contexto(perfis=tuple(dict.fromkeys(p.perfis)), chuva_forte=bool(tempo.get("chuva_forte_proximas_h")),
-                   noite=noite_agora(), relatos=RELATOS.para_rotas())
+                   noite=noite_agora(), relatos=RELATOS.para_rotas(), preferencias=tuple(dict.fromkeys(p.preferencias)))
     origem = p.origem.model_dump()
     destino = p.destino.model_dump()
     origem["nome"] = origem.get("nome") or "Você"
@@ -293,6 +308,8 @@ def rota(p: PedidoRota):
             except (requests.RequestException, KeyError, IndexError):
                 raise HTTPException(503, "Não consegui calcular a rota agora. Tente de novo em um minuto.")
         r["perfil"] = list(ctx.perfis)
+        r["preferencias"] = list(ctx.preferencias)
+        r["criterios"] = criterios_rota(r, ctx.preferencias)
         r["falas"] = fala_resumo(r)
         if fonte == "ors":
             r["falas"]["avisos"].insert(0, "Rota do OpenRouteService: evita escadas"
@@ -307,6 +324,7 @@ def rota(p: PedidoRota):
     if p.explicar and fonte in ("piloto", "osm_ao_vivo"):
         r["falas"] = assistente.explicar_rota(r, idoso=p.idoso)
     ROTAS_CALC.labels("+".join(sorted(ctx.perfis)), str(bool(r["desvios"])).lower()).inc()
+    RELATOS.registrar_rota("+".join(sorted(ctx.perfis)), list(ctx.preferencias), len(r["desvios"]), fonte)
     _contar_llm()
     return r
 
@@ -341,7 +359,8 @@ def listar_relatos(s: Optional[float] = None, w: Optional[float] = None, n: Opti
 @app.post("/api/relatos", dependencies=[Depends(limite(10))])
 async def criar_relato(categoria: str = Form(...), lat: float = Form(...), lon: float = Form(...),
                        hash_foto: Optional[str] = Form(None), validacao: Optional[str] = Form(None),
-                       detalhes: Optional[str] = Form(None),
+                       detalhes: Optional[str] = Form(None), descricao: Optional[str] = Form(None, max_length=400),
+                       canal: Optional[Literal["foto", "voz", "texto"]] = Form(None),
                        foto: Optional[UploadFile] = File(None), x_dispositivo: Optional[str] = Header(None)):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise HTTPException(422, "Posição inválida.")
@@ -383,11 +402,35 @@ async def criar_relato(categoria: str = Form(...), lat: float = Form(...), lon: 
     try:
         r = RELATOS.criar(categoria=categoria, lat=lat, lon=lon, rua=rua, dispositivo=validar_dispositivo(x_dispositivo),
                           hash_foto=(hash_foto or None) and hash_foto[:64], foto_arquivo=arquivo, validacao=val,
-                          detalhes=det)
+                          detalhes=det, descricao=descricao, canal=canal)
     except ErroRelato as e:
         raise HTTPException(422, str(e))
     RELATOS_CRIADOS.labels(categoria).inc()
     return r
+
+
+class PedidoRelatoVoz(BaseModel):
+    texto: str = Field(min_length=3, max_length=400)
+
+
+@app.post("/api/relatos/voz/classificar", dependencies=[Depends(limite(20))])
+def classificar_relato_voz(p: PedidoRelatoVoz):
+    """Relato por voz: sugere a categoria a partir do que a pessoa disse (ela confirma antes de enviar)."""
+    try:
+        r = assistente.classificar_relato_voz(p.texto)
+    except ValueError:
+        raise HTTPException(422, "Não entendi o que foi dito. Tente de novo.")
+    _contar_llm()
+    return r
+
+
+@app.get("/api/relatos/{rid}/foto")
+def foto_relato(rid: str):
+    """Foto do relato (já anonimizada no aparelho de quem enviou) para o mapa público e o painel."""
+    p = RELATOS.caminho_foto(rid[:20])
+    if not p:
+        raise HTTPException(404, "Relato sem foto.")
+    return FileResponse(p, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.post("/api/relatos/{rid}/respostas", dependencies=[Depends(limite(30))])
@@ -565,6 +608,86 @@ def moderar(rid: str, p: Decisao):
         return RELATOS.moderar(rid[:20], p.decisao)
     except ErroRelato as e:
         raise HTTPException(422, str(e))
+
+
+# ---------------------------------------------------------------------------
+# Painel Administrativo (ADM): gestão pública das ocorrências
+# ---------------------------------------------------------------------------
+def _relatos_adm(regiao: Optional[str], categoria: Optional[str], status: Optional[str], dias: Optional[int]):
+    todos = adm.com_regiao(RELATOS.todos(), GRAFO.bbox)
+    return todos, adm.filtrar(todos, regiao, categoria, status, dias)
+
+
+@app.get("/api/adm/sessao", dependencies=[Depends(exigir_admin)])
+def adm_sessao():
+    t = GRAFO.meta["territorio"]
+    return {"ok": True, "territorio": {"nome": t["nome"], "bbox": t["bbox"], "centro": t["centro"]},
+            "regioes": adm.regioes(GRAFO.bbox), "categorias": adm.NOME_CATEGORIA, "status": adm.NOME_STATUS,
+            "token_demo": config.ADMIN_TOKEN_DEMO}
+
+
+@app.get("/api/adm/resumo", dependencies=[Depends(exigir_admin)])
+def adm_resumo(regiao: Optional[str] = None, categoria: Optional[str] = None, status: Optional[str] = None,
+               dias: Optional[int] = None):
+    todos, sel = _relatos_adm(regiao, categoria, status, dias)
+    out = adm.resumo(sel)
+    out["impacto"] = RELATOS.indicadores()["impacto"]
+    out["total_geral"] = len(todos)
+    return out
+
+
+@app.get("/api/adm/relatos", dependencies=[Depends(exigir_admin)])
+def adm_relatos(regiao: Optional[str] = None, categoria: Optional[str] = None, status: Optional[str] = None,
+                dias: Optional[int] = None):
+    _, sel = _relatos_adm(regiao, categoria, status, dias)
+    return {"relatos": sel}
+
+
+class MudancaStatus(BaseModel):
+    status: Literal["em_verificacao", "confirmado", "encaminhado", "resolvido", "descartado"]
+    protocolo: Optional[str] = Field(default=None, max_length=60)
+
+
+@app.post("/api/adm/relatos/{rid}/status", dependencies=[Depends(exigir_admin)])
+def adm_mudar_status(rid: str, p: MudancaStatus):
+    try:
+        r = RELATOS.mudar_status(rid[:20], p.status, p.protocolo)
+    except ErroRelato as e:
+        raise HTTPException(404, str(e))
+    log.info(json.dumps({"evento": "adm_status", "relato": rid[:20], "status": p.status}))
+    return adm.com_regiao([r], GRAFO.bbox)[0]
+
+
+@app.get("/api/adm/exportar", dependencies=[Depends(exigir_admin)])
+def adm_exportar(regiao: Optional[str] = None, categoria: Optional[str] = None, status: Optional[str] = None,
+                 dias: Optional[int] = None):
+    """Registros fotográficos organizados por região (uma pasta por região) + CSV."""
+    _, sel = _relatos_adm(regiao, categoria, status, dias)
+    dados = adm.exportar_zip(sel, RELATOS.caminho_foto)
+    nome = f"caminho-livre-registros-{datetime.now(ZoneInfo(config.FUSO)).strftime('%Y%m%d-%H%M')}.zip"
+    return Response(dados, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+# ---------------------------------------------------------------------------
+# Instituições (modelo de negócio): entradas mapeadas e widget "como chegar"
+# ---------------------------------------------------------------------------
+def _entrada_acessivel(e: dict) -> bool:
+    """Mesma regra do widget: sem degrau (ou com rampa/elevador), sem porta giratória e passagem >= 80 cm."""
+    sem_degrau = e.get("degraus") == 0 or e.get("rampa") or e.get("elevador")
+    largura_ok = e.get("largura_m") is None or e["largura_m"] >= 0.8
+    return bool(sem_degrau and e.get("porta") != "giratoria" and largura_ok)
+
+
+@app.get("/api/instituicoes")
+def instituicoes():
+    """Lugares com entradas levantadas, que podem publicar o widget no próprio site."""
+    out = []
+    for l in LOCAIS.itens:
+        es = l.get("entradas", [])
+        out.append({**entradas.resumo_local(l), "entradas": len(es),
+                    "entradas_acessiveis": sum(1 for e in es if _entrada_acessivel(e)),
+                    "verificado_em": l.get("verificado_em")})
+    return {"instituicoes": out}
 
 
 @app.get("/api/chamados/pendentes", dependencies=[Depends(exigir_rpa)])

@@ -11,7 +11,7 @@ const EXPLICACAO = 'O Caminho Livre mostra o caminho a pé mais seguro para o se
 export function BoasVindas({ aoComecar }) {
   const fala = 'Caminho Livre. O caminho mais seguro para o seu jeito de andar. Eu falo cada passo com você. Não precisa ler nada. Toque em Começar.';
   return (
-    <Tela fala={fala}>
+    <Tela fala={fala} fixa>
       <div className="area-flex">
       <div className="boas-vindas-arte" aria-hidden="true">
         <div className="arte-braille">{Array.from({ length: 16 }, (_, i) => <i key={i} />)}</div>
@@ -46,17 +46,64 @@ function InterruptorSom() {
   );
 }
 
+/**
+ * Escolha do modo de uso (pitch: "o usuário pode escolher entre dois modos: fala ou digitação").
+ * Fala: a voz conduz (microfone em destaque, tudo narrado). Digitar: telas com texto, sem
+ * narração automática; o microfone continua à mão para quem quiser usar comandos de voz.
+ */
+export function Modo({ atual, aoEscolher, aoVoltar, aoPular, passo = 1, total = 4 }) {
+  const fala = 'Como você prefere usar o app? Quero falar: você diz o destino e eu leio tudo em voz alta. Quero digitar: você navega pelas telas e usa a voz quando quiser.';
+  const opcoes = [
+    { id: 'fala', icone: 'mic', titulo: 'Quero falar', sub: 'Aperto um botão e digo o destino. O app lê tudo em voz alta.' },
+    { id: 'digitar', icone: 'teclado', titulo: 'Quero digitar', sub: 'Navego pelas telas e escrevo. Uso a voz quando quiser.' },
+  ];
+  return (
+    <Tela fala={fala} fixa>
+      <Cabecalho titulo="Modo de uso" aoVoltar={aoVoltar} fala={fala} />
+      {passo && <Progresso passo={passo} total={total} />}
+      <CaixaFala titulo={<Titulo className="titulo-fala">Como você prefere usar o app?</Titulo>}>Dá para trocar depois em Ajustes.</CaixaFala>
+      <div className="opcoes opcoes-modo" role="radiogroup" aria-label="Modo de uso">
+        {opcoes.map((o) => (
+          <button key={o.id} type="button" role="radio" aria-checked={atual === o.id} className="opcao opcao-modo" onClick={() => aoEscolher(o.id)}>
+            <Icone nome={o.icone} />
+            <span><strong>{o.titulo}</strong><small>{o.sub}</small></span>
+            {atual === o.id && <span className="opcao-check"><Icone nome="check" /></span>}
+          </button>
+        ))}
+      </div>
+      <div className="empurra" />
+      {aoPular && <button type="button" className="link-simples" onClick={aoPular}>Pular e configurar depois</button>}
+    </Tela>
+  );
+}
+
 const PERFIS = [
-  { id: 'bengala', icone: 'bengala', titulo: 'Uso bengala ou andador' },
-  { id: 'cadeira', icone: 'cadeira', titulo: 'Uso cadeira de rodas' },
+  { id: 'cadeira', icone: 'cadeira', titulo: 'Cadeira de rodas' },
+  { id: 'muletas', icone: 'muleta', titulo: 'Muletas' },
+  { id: 'bengala', icone: 'bengala', titulo: 'Bengala ou andador' },
   { id: 'baixa_visao', icone: 'olho', titulo: 'Enxergo pouco' },
   { id: 'sem_apoio', icone: 'caminho', titulo: 'Ando sem apoio' },
 ];
 
-/** Página 2: como você anda na rua (vários). */
-export function Perfil({ perfis, aoMudar, aoVoltar, aoContinuar, passo = 1 }) {
+/** Preferências que valem para qualquer perfil (o roteamento usa todas juntas). */
+const PREFERENCIAS_ROTA = [
+  { id: 'sem_escada', icone: 'escada', titulo: 'Sem escadas' },
+  { id: 'plano', icone: 'plano', titulo: 'Caminho plano' },
+  { id: 'iluminado', icone: 'sol', titulo: 'Rua iluminada' },
+];
+
+/**
+ * Página 2: como você anda na rua (vários) + o que evitar no caminho. Cabe numa tela:
+ * perfis em grade 2 x 3 e preferências como fichas. comNome: cadastro de outro perfil
+ * ("Minha mãe"), com campo de nome. aoPular: deixa para cadastrar depois.
+ */
+export function Perfil({ perfis, preferencias = [], nome = '', comNome = false, aoMudar, aoVoltar, aoContinuar, aoPular,
+  passo = 1, total = 4, rotuloContinuar = 'Continuar' }) {
   const [sel, setSel] = useState(perfis.length ? perfis : []);
-  const fala = 'Como você anda na rua? Pode escolher mais de um. ' + PERFIS.map((p) => p.titulo).join('. ') + '.';
+  const [prefs, setPrefs] = useState(preferencias);
+  const [apelido, setApelido] = useState(nome);
+  const fala = (comNome ? 'Dê um nome para este perfil. ' : '') + 'Como você anda na rua? Pode escolher mais de um. '
+    + PERFIS.map((p) => p.titulo).join('. ') + '. No caminho, você quer: ' + PREFERENCIAS_ROTA.map((p) => p.titulo).join('. ') + '.';
   const alternar = (id) => {
     let novo = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id];
     if (id === 'sem_apoio' && novo.includes('sem_apoio')) novo = ['sem_apoio'];
@@ -65,22 +112,44 @@ export function Perfil({ perfis, aoMudar, aoVoltar, aoContinuar, passo = 1 }) {
     const p = PERFIS.find((x) => x.id === id);
     falar(`${p.titulo}: ${novo.includes(id) ? 'escolhido' : 'tirado'}.`);
   };
+  const alternarPref = (id) => {
+    const novo = prefs.includes(id) ? prefs.filter((x) => x !== id) : [...prefs, id];
+    setPrefs(novo);
+    const p = PREFERENCIAS_ROTA.find((x) => x.id === id);
+    falar(`${p.titulo}: ${novo.includes(id) ? 'escolhido' : 'tirado'}.`);
+  };
+  const pronto = sel.length > 0 && (!comNome || apelido.trim());
   return (
-    <Tela fala={fala}>
-      <Cabecalho titulo="Seu perfil" aoVoltar={aoVoltar} fala={fala} />
-      <Progresso passo={passo} />
-      <CaixaFala titulo={<Titulo className="titulo-fala">Como você anda na rua?</Titulo>}>Pode escolher mais de um.</CaixaFala>
-      <div className="opcoes" role="group" aria-label="Como você anda na rua">
+    <Tela fala={fala} fixa className="tela-perfil">
+      <Cabecalho titulo={comNome ? 'Novo perfil' : 'Seu perfil'} aoVoltar={aoVoltar} fala={fala} />
+      {passo && <Progresso passo={passo} total={total} />}
+      {comNome && (
+        <div className="campo campo-nome">
+          <label htmlFor="nome-perfil"><strong>Nome do perfil</strong></label>
+          <input id="nome-perfil" value={apelido} maxLength={24} onChange={(e) => setApelido(e.target.value)} placeholder="Ex.: Minha mãe" autoComplete="off" />
+        </div>
+      )}
+      <Titulo className="titulo-secao">Como {comNome ? 'essa pessoa anda' : 'você anda'} na rua?</Titulo>
+      <div className="grade-perfis" role="group" aria-label="Como anda na rua (pode escolher mais de um)">
         {PERFIS.map((p) => (
-          <button key={p.id} type="button" className="opcao" aria-pressed={sel.includes(p.id)} onClick={() => alternar(p.id)}>
+          <button key={p.id} type="button" className="ficha-perfil" aria-pressed={sel.includes(p.id)} onClick={() => alternar(p.id)}>
             <Icone nome={p.icone} />
             <span>{p.titulo}</span>
-            {sel.includes(p.id) && <span className="opcao-check"><Icone nome="check" /></span>}
+            {sel.includes(p.id) && <span className="ficha-check" aria-hidden="true"><Icone nome="check" /></span>}
+          </button>
+        ))}
+      </div>
+      <h2 id="titulo-pref-rota" className="titulo-secao-2">No caminho, eu quero</h2>
+      <div className="fichas-pref" role="group" aria-labelledby="titulo-pref-rota">
+        {PREFERENCIAS_ROTA.map((p) => (
+          <button key={p.id} type="button" className="ficha-pref" aria-pressed={prefs.includes(p.id)} onClick={() => alternarPref(p.id)}>
+            <Icone nome={prefs.includes(p.id) ? 'check' : p.icone} />{p.titulo}
           </button>
         ))}
       </div>
       <div className="empurra" />
-      <Botao icone="seta" disabled={!sel.length} onClick={() => { aoMudar(sel); aoContinuar(); }}>Continuar</Botao>
+      <Botao icone="seta" disabled={!pronto} onClick={() => { aoMudar(sel, prefs, apelido.trim()); aoContinuar(); }}>{rotuloContinuar}</Botao>
+      {aoPular && <button type="button" className="link-simples link-pular" onClick={aoPular}>Pular, cadastro meu perfil depois</button>}
     </Tela>
   );
 }
@@ -90,7 +159,7 @@ function Chave({ ligada, aoMudar, rotulo }) {
 }
 
 /** Página 3: como prefere receber as instruções. */
-export function Preferencias({ prefs, aoMudar, aoVoltar, aoContinuar, passo = 2, rotuloContinuar = 'Continuar' }) {
+export function Preferencias({ prefs, aoMudar, aoVoltar, aoContinuar, passo = 2, total = 4, rotuloContinuar = 'Continuar' }) {
   const fala = 'Como prefere receber as instruções? Falar tudo em voz alta. Voz mais devagar. Vibrar nos avisos. E o tamanho da letra.';
   const item = (chave, icone, titulo, sub) => (
     <div className="preferencia">
@@ -106,7 +175,7 @@ export function Preferencias({ prefs, aoMudar, aoVoltar, aoContinuar, passo = 2,
   return (
     <Tela fala={fala}>
       <Cabecalho titulo="Seu perfil" aoVoltar={aoVoltar} fala={fala} />
-      {passo && <Progresso passo={passo} />}
+      {passo && <Progresso passo={passo} total={total} />}
       <CaixaFala titulo={<Titulo className="titulo-fala">Como prefere receber as instruções?</Titulo>} />
       <AvisoSemVoz />
       {item('vozAlta', 'som', 'Falar tudo em voz alta', 'Recomendado')}
@@ -122,7 +191,7 @@ export function Preferencias({ prefs, aoMudar, aoVoltar, aoContinuar, passo = 2,
         </div>
       </div>
       <div className="empurra" />
-      <Botao icone="seta" onClick={aoContinuar}>{rotuloContinuar}</Botao>
+      <Rodape fixo><Botao icone="seta" onClick={aoContinuar}>{rotuloContinuar}</Botao></Rodape>
     </Tela>
   );
 }

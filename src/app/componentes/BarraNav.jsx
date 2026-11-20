@@ -3,8 +3,9 @@ import { Icone } from './Icone.jsx';
 /** Barra inferior das telas principais (como em apps de mapa). */
 const ITENS = [
   { id: 'home', nome: 'Início', icone: 'casa' },
+  { id: 'mapa', nome: 'Mapa', icone: 'mapa' },
   { id: 'avisar', nome: 'Avisar', icone: 'alerta', classe: 'nav-avisar' },
-  { id: 'meus', nome: 'Meus avisos', icone: 'lista' },
+  { id: 'meus', nome: 'Avisos', icone: 'lista' },
   { id: 'ajustes', nome: 'Ajustes', icone: 'ajustes' },
 ];
 

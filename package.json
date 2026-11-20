@@ -9,6 +9,7 @@
     "dev": "vite",
     "start": "vite",
     "build": "vite build",
+    "vercel-build": "npm run deps && vite build && rm -rf dist/opencv",
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
     "test:precisao": "node scripts/avaliar-precisao.js",

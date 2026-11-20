@@ -54,6 +54,8 @@ export const api = {
   rota: (pedido) => chamar('/rotas', { metodo: 'POST', corpo: pedido, timeout: 25000 }),
   relatos: () => chamar('/relatos'),
   criarRelato: (form) => chamar('/relatos', { metodo: 'POST', form, timeout: 30000 }),
+  classificarRelatoVoz: (texto) => chamar('/relatos/voz/classificar', { metodo: 'POST', corpo: { texto }, timeout: 15000 }),
+  instituicoes: () => chamar('/instituicoes'),
   responder: (id, resposta) => chamar(`/relatos/${encodeURIComponent(id)}/respostas`, { metodo: 'POST', corpo: { resposta } }),
   meus: () => chamar('/relatos/meus'),
   novidades: (marcar = false) => chamar(`/novidades${marcar ? '?marcar=true' : ''}`),

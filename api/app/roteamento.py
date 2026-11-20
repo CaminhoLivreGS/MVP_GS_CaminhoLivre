@@ -17,23 +17,27 @@ from dataclasses import dataclass, field
 from .grafo import (F_ALAGA, F_GUIA_ELEV, F_GUIA_REB, F_SEMAFORO, F_SONORO, F_TATIL, F_TRAVESSIA,
                     VIAS_GRANDES, Grafo, dist_ponto_segmento, distancia_m, rumo)
 
-PERFIS = ("bengala", "cadeira", "baixa_visao", "sem_apoio")
-VELOCIDADE_MS = {"cadeira": 0.85, "bengala": 0.75, "baixa_visao": 0.85, "sem_apoio": 1.2}
+PERFIS = ("bengala", "cadeira", "muletas", "baixa_visao", "sem_apoio")
+VELOCIDADE_MS = {"cadeira": 0.85, "bengala": 0.75, "muletas": 0.7, "baixa_visao": 0.85, "sem_apoio": 1.2}
+# Preferências que valem para qualquer perfil (pitch: "restrição a escadas, caminhos planos e iluminados").
+PREFERENCIAS = ("sem_escada", "plano", "iluminado")
 
 # Fatores multiplicativos por perfil. Com vários perfis, vale o maior fator.
 FATOR = {
-    "escada":          {"cadeira": math.inf, "bengala": 15.0, "baixa_visao": 2.0, "sem_apoio": 1.1},
-    "sup_irregular":   {"cadeira": 2.5, "bengala": 1.8, "baixa_visao": 1.4, "sem_apoio": 1.05},
-    "sup_ruim":        {"cadeira": 6.0, "bengala": 3.0, "baixa_visao": 2.0, "sem_apoio": 1.2},
-    "sem_calcada":     {"cadeira": 2.0, "bengala": 1.6, "baixa_visao": 1.8, "sem_apoio": 1.2},
-    "sem_calcada_via_grande": {"cadeira": 3.0, "bengala": 2.5, "baixa_visao": 3.0, "sem_apoio": 1.5},
-    "relato_confirmado": {"cadeira": 40.0, "bengala": 30.0, "baixa_visao": 30.0, "sem_apoio": 8.0},
-    "relato_verificacao": {"cadeira": 1.6, "bengala": 1.5, "baixa_visao": 1.5, "sem_apoio": 1.1},
-    "escuro_noite":    {"cadeira": 1.3, "bengala": 1.4, "baixa_visao": 1.2, "sem_apoio": 1.3},
+    "escada":          {"cadeira": math.inf, "bengala": 15.0, "muletas": 20.0, "baixa_visao": 2.0, "sem_apoio": 1.1},
+    "sup_irregular":   {"cadeira": 2.5, "bengala": 1.8, "muletas": 2.0, "baixa_visao": 1.4, "sem_apoio": 1.05},
+    "sup_ruim":        {"cadeira": 6.0, "bengala": 3.0, "muletas": 3.5, "baixa_visao": 2.0, "sem_apoio": 1.2},
+    "sem_calcada":     {"cadeira": 2.0, "bengala": 1.6, "muletas": 1.6, "baixa_visao": 1.8, "sem_apoio": 1.2},
+    "sem_calcada_via_grande": {"cadeira": 3.0, "bengala": 2.5, "muletas": 2.5, "baixa_visao": 3.0, "sem_apoio": 1.5},
+    "relato_confirmado": {"cadeira": 40.0, "bengala": 30.0, "muletas": 30.0, "baixa_visao": 30.0, "sem_apoio": 8.0},
+    "relato_verificacao": {"cadeira": 1.6, "bengala": 1.5, "muletas": 1.5, "baixa_visao": 1.5, "sem_apoio": 1.1},
+    "escuro_noite":    {"cadeira": 1.3, "bengala": 1.4, "muletas": 1.4, "baixa_visao": 1.2, "sem_apoio": 1.3},
 }
 # Penalidade (em metros equivalentes) ao passar por uma travessia.
-TRAVESSIA_SEM_SEMAFORO_M = {"cadeira": 25, "bengala": 35, "baixa_visao": 120, "sem_apoio": 5}
-GUIA_ELEVADA_M = {"cadeira": 400, "bengala": 30, "baixa_visao": 0, "sem_apoio": 0}
+TRAVESSIA_SEM_SEMAFORO_M = {"cadeira": 25, "bengala": 35, "muletas": 35, "baixa_visao": 120, "sem_apoio": 5}
+GUIA_ELEVADA_M = {"cadeira": 400, "bengala": 30, "muletas": 40, "baixa_visao": 0, "sem_apoio": 0}
+# Preferência "ruas iluminadas": vale de dia também (a pessoa pode voltar à noite).
+FATOR_ESCURO_PREFERENCIA = {"nao": 1.8, "sem_dado": 1.15}
 
 CATEGORIAS_BARREIRA = {"buraco", "calcada_irregular", "obstaculo", "sem_rampa", "alagamento", "obra"}
 NOMES_RELATO = {
@@ -54,11 +58,17 @@ class Contexto:
     chuva_forte: bool = False
     noite: bool = False
     relatos: list[dict] = field(default_factory=list)
+    preferencias: tuple[str, ...] = ()
     _perigo: dict[int, list[dict]] = field(default_factory=dict)
 
     def fator(self, chave: str) -> float:
         tabela = FATOR[chave]
+        if chave == "escada" and "sem_escada" in self.preferencias:
+            return math.inf
         return max((tabela[p] for p in self.perfis), default=1.0)
+
+    def quer(self, preferencia: str) -> bool:
+        return preferencia in self.preferencias
 
     def metros(self, tabela: dict) -> float:
         return max((tabela[p] for p in self.perfis), default=0.0)
@@ -92,15 +102,19 @@ def custo_aresta(g: Grafo, i: int, ctx: Contexto) -> float:
     s = e.inc
     if "cadeira" in ctx.perfis:
         f *= 25.0 if s > 12 else 6.0 if s > 8 else 2.0 if s > 5 else 1.0
-    if "bengala" in ctx.perfis:
+    if "bengala" in ctx.perfis or "muletas" in ctx.perfis:
         f *= 1.0 + 0.06 * max(0.0, s - 3)
+    if ctx.quer("plano"):
+        f *= 1.0 + 0.15 * max(0.0, s - 2)
     if ctx.noite and e.ilum == "nao":
         f *= ctx.fator("escuro_noite")
+    if ctx.quer("iluminado"):
+        f *= FATOR_ESCURO_PREFERENCIA.get(e.ilum, 1.0)
     if e.tipo in ("footway", "pedestrian", "living_street"):
         f *= 0.9
     for r in ctx._perigo.get(i, ()):
         if r["categoria"] == "luz_apagada":
-            if ctx.noite:
+            if ctx.noite or ctx.quer("iluminado"):
                 f *= ctx.fator("escuro_noite")
             continue
         if r["categoria"] == "alagamento" and not ctx.chuva_forte and r["status"] != "confirmado":
@@ -354,7 +368,7 @@ def montar_rota(g: Grafo, nos: list[int], arestas: list[int], ctx: Contexto,
 
     vel = min((VELOCIDADE_MS[p] for p in ctx.perfis), default=1.1)
     return {
-        "origem": origem, "destino": destino, "perfil": list(ctx.perfis),
+        "origem": origem, "destino": destino, "perfil": list(ctx.perfis), "preferencias": list(ctx.preferencias),
         "distancia_m": round(total), "duracao_min": max(1, round(total / vel / 60)),
         "escadas": sum(1 for a in arestas if g.arestas[a].escada),
         "trechos": trechos, "manobras": manobras, "alertas_no_caminho": alertas,
@@ -389,13 +403,13 @@ def comparar_desvios(g: Grafo, segura: dict, comum: dict, ctx: Contexto) -> list
             if r["status"] == "confirmado" and r["id"] not in ids_alerta_seg and r["categoria"] in CATEGORIAS_BARREIRA:
                 add(r.get("rua") or g.arestas[ai].nome, r["categoria"], r["status"], r.get("confirmacoes"),
                     {"lat": r["lat"], "lon": r["lon"], "relato_id": r["id"]})
-    if any(p in ctx.perfis for p in ("cadeira", "bengala", "baixa_visao")):
+    if any(p in ctx.perfis for p in ("cadeira", "bengala", "muletas", "baixa_visao")) or ctx.quer("sem_escada"):
         for ai in so_comum:
             e = g.arestas[ai]
             if e.escada:
                 add(e.nome, "escada", "dado_osm")
-    if "cadeira" in ctx.perfis or "bengala" in ctx.perfis:
-        limite = 8 if "cadeira" in ctx.perfis else 10
+    if any(p in ctx.perfis for p in ("cadeira", "bengala", "muletas")) or ctx.quer("plano"):
+        limite = 5 if ctx.quer("plano") else 8 if "cadeira" in ctx.perfis else 10
         ladeira: dict[str, float] = {}
         for ai in so_comum:
             e = g.arestas[ai]
@@ -404,6 +418,15 @@ def comparar_desvios(g: Grafo, segura: dict, comum: dict, ctx: Contexto) -> list
         for nome, comp in ladeira.items():
             if comp >= 25:
                 add(nome, "subida_forte", "dado_relevo")
+    if ctx.quer("iluminado"):
+        escuro: dict[str, float] = {}
+        for ai in so_comum:
+            e = g.arestas[ai]
+            if e.ilum == "nao" and e.nome:
+                escuro[e.nome] = escuro.get(e.nome, 0) + e.comp
+        for nome, comp in escuro.items():
+            if comp >= 40:
+                add(nome, "rua_escura", "dado_osm")
     if ctx.chuva_forte:
         for ai in so_comum:
             e = g.arestas[ai]
@@ -416,14 +439,28 @@ MOTIVO_FALA = {
     "buraco": "tem um buraco na calçada", "calcada_irregular": "a calçada está irregular",
     "obstaculo": "tem um obstáculo na calçada", "sem_rampa": "falta rampa", "alagamento": "está alagada",
     "obra": "tem obra na calçada", "escada": "tem escada", "subida_forte": "tem uma subida forte",
-    "risco_alagamento": "pode alagar com a chuva",
+    "risco_alagamento": "pode alagar com a chuva", "rua_escura": "não tem iluminação",
 }
+NOMES_PREFERENCIA = {"sem_escada": "sem escadas", "plano": "trecho mais plano", "iluminado": "ruas iluminadas"}
+
+
+def criterios_rota(rota: dict, preferencias=()) -> list[str]:
+    """O que foi levado em conta, em frases curtas para a tela da rota."""
+    out = []
+    if rota.get("escadas", 0) == 0 and ("sem_escada" in preferencias or any(
+            p in rota.get("perfil", []) for p in ("cadeira", "bengala", "muletas"))):
+        out.append("Sem escadas")
+    for p in preferencias:
+        if p != "sem_escada":
+            out.append(NOMES_PREFERENCIA[p].capitalize())
+    return out
 
 
 def fala_resumo(rota: dict) -> dict:
     """Falas determinísticas (sempre fiéis aos dados). A IA pode reescrevê-las."""
     resumo = f"São {falar_distancia(rota['distancia_m'])}, cerca de {rota['duracao_min']} minutos a pé."
-    if rota["escadas"] == 0 and any(p in rota["perfil"] for p in ("cadeira", "bengala")):
+    if rota["escadas"] == 0 and (any(p in rota["perfil"] for p in ("cadeira", "bengala", "muletas"))
+                                 or "sem_escada" in rota.get("preferencias", [])):
         resumo += " O caminho não tem escadas."
     motivos = []
     ruas_rota = {t["rua"] for t in rota["trechos"]}
@@ -468,6 +505,7 @@ def calcular(g: Grafo, origem: dict, destino: dict, ctx: Contexto) -> dict:
     segura["rota_comum"] = {"coords": comum["geometria"]["coords"]}
     segura["desvios"] = comparar_desvios(g, segura, comum, ctx)
     segura["falas"] = fala_resumo(segura)
+    segura["criterios"] = criterios_rota(segura, ctx.preferencias)
     for k in ("_nos", "_arestas"):
         segura.pop(k, None)
     return segura

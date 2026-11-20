@@ -4,7 +4,7 @@ import { Icone } from '../componentes/Icone.jsx';
 import { BarraNav } from '../componentes/BarraNav.jsx';
 import { api } from '../servicos/api.js';
 import { escutaDisponivel, escutar, falar } from '../servicos/voz.js';
-import { NOMES_PERFIL } from '../servicos/preferencias.js';
+import { resumoPerfil } from '../servicos/preferencias.js';
 import { ICONE_RELATO } from './Rota.jsx';
 
 const NOME_RELATO = { buraco: 'Buraco', calcada_irregular: 'Calçada irregular', obstaculo: 'Obstáculo', sem_rampa: 'Sem rampa',
@@ -111,7 +111,12 @@ export function Ajustes({ prefs, aoMudar, aoVoltar, ir, aoMenu }) {
             onClick={() => { aoMudar({ tema: id }); falar(`Cores: ${nome}.`); }}><b aria-hidden="true">Aa</b>{nome}</button>
         ))}
       </div>
-      {item('bengala', 'Meu perfil', [prefs.perfis.map((p) => NOMES_PERFIL[p]).join(', '), prefs.vozDevagar && 'voz devagar'].filter(Boolean).join(' · '), () => ir('perfil'))}
+      {item(prefs.modo === 'digitar' ? 'teclado' : 'mic', 'Modo de uso', prefs.modo === 'digitar' ? 'Digitar (voz quando eu quiser)' : 'Falar (o app lê tudo)', () => ir('modo'))}
+      {item('bengala', 'Perfis de caminhada', (() => {
+        const ativo = (prefs.perfisSalvos ?? []).find((p) => p.id === prefs.perfilAtivo);
+        const n = prefs.perfisSalvos?.length ?? 0;
+        return ativo ? `${ativo.nome}: ${resumoPerfil(ativo)}${n > 1 ? ` · ${n} perfis` : ''}` : 'Nenhum ainda · cadastrar';
+      })(), () => ir('perfis'))}
       {item('som', 'Voz e letra', `${prefs.vozAlta ? 'Falar tudo' : 'Mudo'} · voz ${prefs.vozDevagar ? 'lenta' : 'normal'} · letra ${{ pequena: 'pequena', media: 'média', grande: 'grande' }[prefs.letra]}`, () => ir('preferencias'))}
       {editando ? (
         <form className="cartao" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); aoMudar({ acompanhante: acomp.trim().slice(0, 40) }); setEditando(false); }}>
@@ -169,7 +174,7 @@ export function Ajuda({ aoVoltar }) {
       {carregando && <Carregando texto="Pensando…" />}
       {resp && <CaixaFala titulo={resp.resposta}>{resp.fonte && resp.fonte !== 'regras' ? 'Resposta gerada por IA a partir do manual do app.' : 'Resposta do manual do app.'}</CaixaFala>}
       <div className="empurra" />
-      <a className="botao secundario" href="tel:192"><Icone nome="alerta" /><span>Emergência: ligar 192</span></a>
+      <Rodape fixo><a className="botao secundario" href="tel:192"><Icone nome="alerta" /><span>Emergência: ligar 192</span></a></Rodape>
     </Tela>
   );
 }

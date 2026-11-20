@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
-import { BoasVindas, Perfil, Preferencias } from './telas/Onboarding.jsx';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BoasVindas, Modo, Perfil, Preferencias } from './telas/Onboarding.jsx';
+import { MapaBarreiras } from './telas/MapaBarreiras.jsx';
+import { AvisoVoz, EscolherAviso } from './telas/AvisoVoz.jsx';
 import { ConfirmarDestino, Home, Ouvindo } from './telas/Destino.jsx';
 import { Chegada, Navegacao, PreviaRota } from './telas/Rota.jsx';
 import { AvisoEnviado, CameraAviso, TipoAviso } from './telas/Avisar.jsx';
 import { Ajuda, Ajustes, MeusAvisos, Novidade, Privacidade } from './telas/Conta.jsx';
 import { Saindo, lerCodigoLocal } from './telas/Local.jsx';
 import { Aviso, Botao, Cabecalho, Carregando, Tela, Titulo, VozContexto } from './componentes/base.jsx';
-import { carregar, salvar } from './servicos/preferencias.js';
+import { apagarPerfil, carregar, salvar, salvarPerfil, usarPerfil } from './servicos/preferencias.js';
+import { Perfis } from './telas/Perfis.jsx';
+import { distancia } from '../localizacao/geo.js';
 import { Celular } from './componentes/Celular.jsx';
 import { api, definirDispositivo, guardarRota } from './servicos/api.js';
 import { configurarVibracao, configurarVoz, falar, temVozPortugues } from './servicos/voz.js';
@@ -24,6 +28,13 @@ if (CODIGO_INICIAL) {
   const u = new URL(location.href);
   u.searchParams.delete('saindo');
   u.searchParams.delete('ponto');
+  history.replaceState(null, '', u);
+}
+// Widget das instituições ("Como chegar com acessibilidade"): ?destino=<id do lugar> abre a rota direto.
+const DESTINO_INICIAL = /^[a-z0-9-]{2,80}$/.test(params.get('destino') ?? '') ? params.get('destino') : null;
+if (DESTINO_INICIAL) {
+  const u = new URL(location.href);
+  u.searchParams.delete('destino');
   history.replaceState(null, '', u);
 }
 // Lugares sem "porta" (o destino já é o ponto): não procura entrada.
@@ -58,6 +69,10 @@ export function App() {
   const [ouvirChave, setOuvirChave] = useState(0);
   const [semVozPt, setSemVozPt] = useState(false);
   const [local, setLocal] = useState(null);
+  const [mapaInicial, setMapaInicial] = useState(null); // relato aberto no mapa de barreiras (ex.: vindo da Novidade)
+  const destinoPendente = useRef(DESTINO_INICIAL);
+  const [barreiras, setBarreiras] = useState([]);          // relatos ativos perto (pinos da Home)
+  const [editandoPerfil, setEditandoPerfil] = useState(null); // id do perfil em edição, 'novo' ou null (o ativo)
   useEffect(() => { temVozPortugues().then((ok) => setSemVozPt(ok === false)); }, []);
 
   const setPrefs = useCallback((mud) => setPrefsEstado((p) => {
@@ -85,7 +100,7 @@ export function App() {
   // Origem: a localização REAL da pessoa, em qualquer lugar (como Waze/Maps).
   // Só se o GPS for negado ou falhar usamos a partida de demonstração (Vila Yara).
   useEffect(() => {
-    if ((tela !== 'home' && tela !== 'saindo') || origem) return;
+    if (!['home', 'saindo', 'mapa'].includes(tela) || origem) return;
     let vivo = true;
     setSemServidor(false);
     (async () => {
@@ -160,6 +175,8 @@ export function App() {
     });
     api.novidades(true).then((r) => r.novidades[0] && setNovidade(r.novidades[0])).catch(() => {});
     api.locaisPerto(origem.lat, origem.lon).then((r) => setLocaisPerto(r.locais)).catch(() => setLocaisPerto([]));
+    api.relatos().then((r) => setBarreiras(r.relatos.filter((x) => x.categoria !== 'entrada')
+      .map((x) => ({ ...x, distancia: distancia(origem, x) })).sort((a, b) => a.distancia - b.distancia))).catch(() => setBarreiras([]));
   }, [origem]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // naMesmaTela: nova busca a partir da própria tela de destino (não empilha outra).
@@ -195,6 +212,7 @@ export function App() {
       origem: { lat: de.lat, lon: de.lon, nome: de.nome },
       destino: alvo,
       perfis,
+      preferencias: prefs.preferenciasRota ?? [],
       idoso: prefs.vozDevagar,
       chuva: SIMULAR_CHUVA ? 'simular' : SEM_CHUVA ? 'nao' : 'auto',
     };
@@ -211,11 +229,24 @@ export function App() {
     }
   }, [ir, origem, prefs]);
 
-  // Barra inferior: Início / Avisar / Meus avisos / Ajustes (voltar sempre leva ao Início).
+  // Veio do widget de uma instituição: assim que souber onde a pessoa está, calcula a rota até o lugar.
+  useEffect(() => {
+    if (!origem || !destinoPendente.current || tela !== 'home') return;
+    const id = destinoPendente.current;
+    destinoPendente.current = null;
+    api.local(id).then((l) => calcularRota({ ...l, categoria: 'local' })).catch(() => falar('Não encontrei esse lugar.'));
+  }, [origem, tela, calcularRota]);
+
+  // Barra inferior: Início / Mapa / Avisar / Avisos / Ajustes (voltar sempre leva ao Início).
   const menu = (id) => {
     if (id === 'home') irRaiz('home');
-    else if (id === 'avisar') { setAviso({ posicao: origem }); setPilha(['home', 'camera']); }
+    else if (id === 'avisar') { setAviso({ posicao: origem }); setPilha(['home', 'escolher_aviso']); }
+    else if (id === 'mapa') { setMapaInicial(null); setPilha(['home', 'mapa']); }
     else setPilha(['home', id]);
+  };
+  const aoEnviarAviso = (criado, tipo) => {
+    setAviso((a) => ({ ...a, criado, tipo }));
+    setPilha((p) => [...p.filter((x) => !['escolher_aviso', 'camera', 'tipo_aviso', 'aviso_voz'].includes(x)), 'aviso_enviado']);
   };
 
   const terminarOnboarding = () => {
@@ -227,24 +258,55 @@ export function App() {
   let conteudo = null;
   switch (tela) {
     case 'boas_vindas':
-      conteudo = <BoasVindas aoComecar={() => ir('perfil')} />;
+      conteudo = <BoasVindas aoComecar={() => ir('modo')} />;
       break;
-    case 'perfil':
-      conteudo = <Perfil perfis={prefs.perfis} aoMudar={(perfis) => setPrefs({ perfis })} aoVoltar={voltar}
-        aoContinuar={() => (prefs.onboardingFeito ? voltar() : ir('preferencias'))} passo={prefs.onboardingFeito ? null : 1} />;
+    case 'modo':
+      conteudo = <Modo atual={prefs.modo} aoVoltar={voltar} passo={prefs.onboardingFeito ? null : 1}
+        aoEscolher={(modo) => {
+          // Fala: o app narra tudo. Digitar: sem narração automática (o alto-falante liga quando quiser).
+          setPrefs({ modo, vozAlta: modo === 'fala' });
+          if (modo === 'fala') falar('Modo fala escolhido. Eu leio tudo em voz alta.', { forcar: true });
+          setDigitar((d) => !d); // a Home troca de layout na hora
+          if (prefs.onboardingFeito) voltar(); else ir('perfil');
+        }}
+        aoPular={prefs.onboardingFeito ? undefined : () => { setPrefs({ modo: 'fala', vozAlta: true }); terminarOnboarding(); }} />;
+      break;
+    case 'perfil': {
+      // Sem editandoPerfil: o perfil ativo (ou o primeiro cadastro). 'novo': cadastrar outro, com nome.
+      const novo = editandoPerfil === 'novo';
+      const alvo = novo ? null : (prefs.perfisSalvos ?? []).find((p) => p.id === (editandoPerfil ?? prefs.perfilAtivo));
+      conteudo = <Perfil key={editandoPerfil ?? 'ativo'} perfis={alvo?.perfis ?? (novo ? [] : prefs.perfis)}
+        preferencias={alvo?.preferenciasRota ?? (novo ? [] : prefs.preferenciasRota ?? [])}
+        nome={alvo?.nome ?? ''} comNome={novo || (prefs.perfisSalvos?.length ?? 0) > 1}
+        aoMudar={(perfis, preferenciasRota, nome) => setPrefs(salvarPerfil(prefs, { id: alvo?.id, nome: nome || alvo?.nome || 'Eu', perfis, preferenciasRota }))}
+        aoVoltar={() => { setEditandoPerfil(null); voltar(); }}
+        aoContinuar={() => { setEditandoPerfil(null); if (prefs.onboardingFeito) voltar(); else ir('preferencias'); }}
+        aoPular={prefs.onboardingFeito ? undefined : terminarOnboarding}
+        rotuloContinuar={prefs.onboardingFeito ? 'Salvar perfil' : 'Continuar'}
+        passo={prefs.onboardingFeito ? null : 2} />;
+      break;
+    }
+    case 'perfis':
+      conteudo = <Perfis prefs={prefs} aoVoltar={voltar}
+        aoUsar={(id) => setPrefs(usarPerfil(prefs, id))}
+        aoEditar={(id) => { setEditandoPerfil(id); ir('perfil'); }}
+        aoNovo={() => { setEditandoPerfil(prefs.perfisSalvos?.length ? 'novo' : null); ir('perfil'); }}
+        aoApagar={(id) => setPrefs(apagarPerfil(prefs, id))} />;
       break;
     case 'preferencias':
-      conteudo = <Preferencias prefs={prefs} aoMudar={setPrefs} aoVoltar={voltar} passo={prefs.onboardingFeito ? null : 2}
+      conteudo = <Preferencias prefs={prefs} aoMudar={setPrefs} aoVoltar={voltar} passo={prefs.onboardingFeito ? null : 3}
         rotuloContinuar={prefs.onboardingFeito ? 'Salvar' : 'Continuar'} aoContinuar={() => (prefs.onboardingFeito ? voltar() : terminarOnboarding())} />;
       break;
     case 'home':
       conteudo = !origem ? (
-        <Tela fala="Procurando onde você está."><Cabecalho marca /><Titulo>Procurando onde você está…</Titulo>
+        <Tela fala="Procurando onde você está." fixa><Cabecalho marca /><Titulo>Procurando onde você está…</Titulo>
           {esperandoOrigem}</Tela>
       ) : (
         <Home key={digitar ? 'd' : 'n'} clima={clima} salvos={salvos} origem={origem} local={local} avisoOrigem={avisoOrigem} aoMenu={menu}
           aoFalar={() => ir('ouvindo')} aoDigitar={buscarDestino} aoEscolher={calcularRota}
-          locaisPerto={locaisPerto} aoSaindo={() => ir('saindo')}
+          locaisPerto={locaisPerto} aoSaindo={() => ir('saindo')} modo={prefs.modo ?? 'fala'}
+          perfil={(prefs.perfisSalvos ?? []).find((p) => p.id === prefs.perfilAtivo) ?? null} aoPerfis={() => ir('perfis')}
+          barreiras={barreiras} aoBarreiras={(id) => { setMapaInicial(id ? barreiras.find((b) => b.id === id) ?? null : null); setPilha(['home', 'mapa']); }}
         />
       );
       break;
@@ -263,11 +325,11 @@ export function App() {
       break;
     case 'rota':
       conteudo = rotaEstado.carregando ? (
-        <Tela fala={rotaEstado.etapa === 'entrada' ? 'Escolhendo a melhor entrada.' : 'Calculando o caminho mais seguro.'}><Cabecalho titulo="Sua rota" aoVoltar={voltar} />
+        <Tela fala={rotaEstado.etapa === 'entrada' ? 'Escolhendo a melhor entrada.' : 'Calculando o caminho mais seguro.'} fixa><Cabecalho titulo="Sua rota" aoVoltar={voltar} />
           <Titulo>{rotaEstado.etapa === 'entrada' ? 'Escolhendo a melhor entrada…' : 'Calculando o caminho mais seguro…'}</Titulo>
           <Carregando texto={rotaEstado.etapa === 'entrada' ? 'Olhando degraus, rampas e portas' : 'Olhando escadas, calçadas e avisos'} /></Tela>
       ) : rotaEstado.erro ? (
-        <Tela><Cabecalho titulo="Sua rota" aoVoltar={voltar} /><Titulo>Não encontrei um caminho</Titulo><Aviso tipo="erro">{rotaEstado.erro}</Aviso>
+        <Tela fixa><Cabecalho titulo="Sua rota" aoVoltar={voltar} /><Titulo>Não encontrei um caminho</Titulo><Aviso tipo="erro">{rotaEstado.erro}</Aviso>
           <div className="empurra" /><Botao variante="secundario" onClick={voltar}>Voltar</Botao></Tela>
       ) : (
         <PreviaRota rota={rotaEstado.rota} origem={origem} aoVoltar={voltar}
@@ -286,12 +348,26 @@ export function App() {
     case 'chegada':
       conteudo = <Chegada resumo={chegada} prefs={prefs} aoFim={() => irRaiz('home')} />;
       break;
+    case 'mapa':
+      conteudo = !origem ? (
+        <Tela fala="Procurando onde você está."><Cabecalho titulo="Mapa de barreiras" aoVoltar={voltar} />{esperandoOrigem}</Tela>
+      ) : (
+        <MapaBarreiras origem={origem} inicial={mapaInicial?.id ?? null} extra={mapaInicial} aoVoltar={voltar} aoMenu={menu}
+          aoAvisar={() => { setAviso({ posicao: origem }); ir('escolher_aviso'); }} />
+      );
+      break;
+    case 'escolher_aviso':
+      conteudo = <EscolherAviso aoVoltar={voltar} aoFoto={() => ir('camera')} aoVoz={() => ir('aviso_voz')} />;
+      break;
+    case 'aviso_voz':
+      conteudo = <AvisoVoz posicao={aviso.posicao ?? origem} aoVoltar={voltar} aoEnviado={aoEnviarAviso} />;
+      break;
     case 'camera':
       conteudo = <CameraAviso aoVoltar={voltar} aoFoto={(foto) => { setAviso((a) => ({ ...a, foto })); ir('tipo_aviso'); }} />;
       break;
     case 'tipo_aviso':
       conteudo = <TipoAviso foto={aviso.foto} posicao={aviso.posicao ?? origem} aoVoltar={voltar} aoRefazer={voltar}
-        aoEnviado={(criado, tipo) => { setAviso((a) => ({ ...a, criado, tipo })); setPilha((p) => [...p.filter((x) => !['camera', 'tipo_aviso'].includes(x)), 'aviso_enviado']); }} />;
+        aoEnviado={aoEnviarAviso} />;
       break;
     case 'aviso_enviado':
       conteudo = <AvisoEnviado tipo={aviso.tipo} navegando={Boolean(nav)} aoVoltar={() => irRaiz(nav ? 'navegacao' : 'home')}
@@ -316,8 +392,8 @@ export function App() {
       conteudo = null;
   }
   if (novidade && tela === 'home') {
-    // TODO: integrar "Ver no mapa" com uma tela de mapa do relato (hoje só fecha a novidade).
-    conteudo = <Novidade relato={novidade} aoFechar={() => setNovidade(null)} aoVerMapa={() => setNovidade(null)} />;
+    conteudo = <Novidade relato={novidade} aoFechar={() => setNovidade(null)}
+      aoVerMapa={() => { setMapaInicial(novidade); setNovidade(null); setPilha(['home', 'mapa']); }} />;
   }
 
   const voz = { ativa: prefs.vozAlta, alternar: (v) => setPrefs({ vozAlta: v }), semVozPt };
@@ -331,7 +407,7 @@ export function App() {
           <Navegacao key={nav.chave} rotaInicial={nav.rota} prefs={prefs} simular={nav.simular} pedidoRota={nav.pedido}
             emSegundoPlano={tela !== 'navegacao'}
             aoChegar={(resumo) => { setChegada(resumo); setNav(null); irRaiz('chegada'); }}
-            aoAvisar={(pos) => { setAviso({ posicao: pos }); ir('camera'); }}
+            aoAvisar={(pos) => { setAviso({ posicao: pos }); ir('escolher_aviso'); }}
             aoSair={() => { setNav(null); falar('Rota encerrada.'); irRaiz('home'); }} />
         )}
         {tela !== 'navegacao' && conteudo}

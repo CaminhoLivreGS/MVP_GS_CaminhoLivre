@@ -25,12 +25,21 @@ Prazo da GS: **19/11, 23h55**. Busque `TODO: integrar` no código para achar cad
 | Assistente de IA | Sem `OPENROUTER_API_KEY` responde **por regras** (fiel, sem LLM) | Cota gratuita (50/dia) e sem chave no ambiente | Colocar a chave no `api/.env` / App Settings |
 | Chuva | Previsão real (Open-Meteo); `?chuva=simular` e `?chuva=nao` para demo reproduzível | Clima real muda a rota | — |
 | Lugares salvos | Casa (demo) + UBS/estação mais próximas | Não há cadastro de lugares do usuário | `TODO` em `App.jsx` |
-| "Ver no mapa" (Novidade) | Fecha a tela | Tempo | `TODO` em `App.jsx` |
+| "Ver no mapa" (Novidade) | ✅ Abre o Mapa de barreiras no relato consertado (19/11) | — | — |
 | Acompanhante | Abre SMS pronto (nada sai sem a pessoa enviar) | LGPD + sem backend de notificação | `TODO` em `Rota.jsx` |
 | Avaliação Bom/Ruim | Só métrica Prometheus + log | Sem tabela ainda | `TODO` em `api/app/main.py` |
 | Offline (PWA) | Manifest sim; service worker não | Tempo | `TODO` em `src/main.jsx` |
 | Fala → texto sem Web Speech | Cai para digitação | Firefox/iOS antigo | `TODO` em `voz.js` |
+| Regiões do Painel ADM | Grade 3x3 de **setores** sobre o território (Setor Norte, Central…) | Não temos os polígonos oficiais de bairro | Trocar `regiao()` em `api/app/adm.py` pelo GeoJSON de bairros da prefeitura |
+| Login do Painel ADM | Token único (`CL_ADMIN_TOKEN`); local sem token aceita `adm-demo` | Sem SSO da prefeitura | Login por pessoa (SSO/gov.br) e trilha de auditoria |
+| Fotos dos relatos simulados | Fotos **ilustrativas** de domínio público/CC0 (`api/dados/fotos_demo/`), marcadas na API e nas telas | Os 32 relatos de demo não têm foto real | Somem quando a base for só de relatos reais (`CL_SEMEAR_RELATOS=0`) |
+| Tempo de resposta e histórico de rotas | Datas de confirmação/conserto dos relatos simulados e 62 rotas `simulado_demo` geradas de forma determinística | Sem histórico real ainda | Rotas e mudanças de status reais já entram nas mesmas tabelas |
+| Relato por voz sem Web Speech | Vira campo de texto (canal `texto`) | Firefox/iOS antigo | Mesmo `TODO` de `voz.js` (Whisper no servidor) |
+| Widget de instituições | Só o Shopping União tem entradas levantadas (dados de **exemplo**) | Sem levantamento em campo | Levantar entradas reais e preencher `locais_detalhados.json` |
 | Semáforo sonoro | Nunca aparece | **0 mapeados no OSM do território** (dado real) | Mapear no OSM / dado da prefeitura |
+
+## 2.1 Alinhamento com o pitch (19/11)
+Tudo o que o pitch mostra está no app; ver [`PITCH_X_MVP.md`](PITCH_X_MVP.md) para onde fica cada promessa.
 
 ## 3. Integração com os outros repositórios (contratos)
 

@@ -2,12 +2,22 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import '@fontsource/atkinson-hyperlegible/400.css';
 import '@fontsource/atkinson-hyperlegible/700.css';
-import './app/estilos.css';
-import { App } from './app/App.jsx';
 
+// Três entradas no mesmo build (mesma origem da API):
+//   /adm            Painel Administrativo da prefeitura (computador)
+//   /embed/<lugar>  widget "Como chegar com acessibilidade" para o site de instituições
+//   /               o app do cidadão
+// Cada uma carrega só o próprio código e CSS (import dinâmico).
 // TODO: integrar service worker (PWA offline): guardar a última rota e as ruas do mapa para internet fraca.
-createRoot(document.getElementById('raiz')).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const caminho = location.pathname;
+const raiz = createRoot(document.getElementById('raiz'));
+const montar = (no) => raiz.render(<StrictMode>{no}</StrictMode>);
+
+if (caminho === '/adm' || caminho.startsWith('/adm/')) {
+  import('./adm/Painel.jsx').then(({ Painel }) => montar(<Painel />));
+} else if (caminho.startsWith('/embed/')) {
+  const id = decodeURIComponent(caminho.slice('/embed/'.length)).replace(/\/$/, '');
+  import('./embed/Embed.jsx').then(({ Embed }) => montar(<Embed id={id} />));
+} else {
+  Promise.all([import('./app/App.jsx'), import('./app/estilos.css')]).then(([{ App }]) => montar(<App />));
+}

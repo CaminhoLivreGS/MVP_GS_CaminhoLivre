@@ -97,7 +97,7 @@ export function CameraAviso({ aoFoto, aoVoltar }) {
   }
 
   return (
-    <Tela fala={fala}>
+    <Tela fala={fala} fixa>
       <Cabecalho titulo="Avisar problema" aoVoltar={aoVoltar} fala={fala} />
       <Progresso passo={1} />
       <Titulo className="so-leitor">Tirar foto do problema</Titulo>
@@ -291,7 +291,7 @@ export function AvisoEnviado({ tipo, navegando, aoVoltar, aoMeusAvisos }) {
     ['Prefeitura', 'Abrimos o chamado por você', false], ['Consertado', 'Você recebe um aviso', false],
   ];
   return (
-    <Tela fala={fala}>
+    <Tela fala={fala} fixa>
       <Cabecalho titulo="Aviso enviado" marca fala={fala} />
       <Progresso passo={3} />
       <div className="circulo-ok"><Icone nome="ok" /></div>

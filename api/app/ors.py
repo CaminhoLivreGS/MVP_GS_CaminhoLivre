@@ -49,7 +49,7 @@ def perfil_ors(perfis) -> tuple[str, dict]:
     if "cadeira" in perfis:
         return "wheelchair", {"avoid_features": ["steps"], "profile_params": {"restrictions": {
             "maximum_incline": 6, "maximum_sloped_kerb": 0.06, "smoothness_type": "good"}}}
-    if "bengala" in perfis:
+    if "bengala" in perfis or "muletas" in perfis:
         return "foot-walking", {"avoid_features": ["steps"]}
     return "foot-walking", {}
 
