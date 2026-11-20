@@ -488,6 +488,114 @@ def fala_resumo(rota: dict) -> dict:
             "instrucoes": [m["fala"] for m in rota["manobras"]], "fonte": "regras"}
 
 
+# Inclinação a partir da qual um trecho conta como "forte" para o perfil (mesmos limites
+# usados para desviar em comparar_desvios). Referência: NBR 9050 limita rampas a 8,33%.
+NBR9050_RAMPA_PCT = 8.33
+FONTE_RELEVO = "Copernicus DEM GLO-90 (satélite, resolução de 90 m), via Open-Meteo"
+
+
+def limite_inclinacao(ctx: Contexto) -> float:
+    if ctx.quer("plano"):
+        return 5.0
+    if "cadeira" in ctx.perfis:
+        return 8.0
+    return 10.0
+
+
+def _nome_perfil_limite(ctx: Contexto) -> str:
+    if ctx.quer("plano"):
+        return "para quem pediu caminho plano"
+    if "cadeira" in ctx.perfis:
+        return "para cadeira de rodas"
+    if any(p in ctx.perfis for p in ("bengala", "muletas")):
+        return "para bengala, andador ou muletas"
+    return "para caminhar com conforto"
+
+
+def _pct(v: float) -> str:
+    return f"{v:.1f}".replace(".", ",").replace(",0", "")
+
+
+def perfil_elevacao(g: Grafo, nos: list[int], arestas: list[int], ctx: Contexto, max_pontos: int = 120) -> dict:
+    """Relevo do caminho, a partir da altitude real dos pontos do grafo.
+
+    Devolve o perfil (distância x altitude) para o gráfico, quanto sobe e desce no total,
+    o trecho mais íngreme e as subidas/descidas fortes para o perfil, com frases simples.
+    """
+    alt = getattr(g, "alt", None)
+    tem_relevo = bool(alt) and g.meta.get("relevo", True) and any(alt[n] for n in nos)
+    if not tem_relevo or len(nos) < 2:
+        return {"disponivel": False, "fonte": FONTE_RELEVO}
+    acum = [0.0]
+    for ai in arestas:
+        acum.append(acum[-1] + g.arestas[ai].comp)
+    alts = [float(alt[n]) for n in nos]
+    sobe = sum(max(0.0, b - a) for a, b in zip(alts, alts[1:]))
+    desce = sum(max(0.0, a - b) for a, b in zip(alts, alts[1:]))
+
+    # Perfil para o gráfico: no máximo max_pontos, sempre com o primeiro e o último.
+    passo = max(1, len(nos) // max_pontos)
+    idx = list(range(0, len(nos), passo))
+    if idx[-1] != len(nos) - 1:
+        idx.append(len(nos) - 1)
+    perfil = [[round(acum[i]), round(alts[i], 1)] for i in idx]
+
+    # Trechos fortes: arestas seguidas acima do limite, juntas por rua (ignora pedaços < 10 m, ruído do relevo).
+    limite = limite_inclinacao(ctx)
+    fortes: list[dict] = []
+    for k, ai in enumerate(arestas):
+        e = g.arestas[ai]
+        if e.inc <= limite or e.comp < 10:
+            continue
+        sentido = "subida" if alts[k + 1] >= alts[k] else "descida"
+        ult = fortes[-1] if fortes else None
+        if ult and ult["rua"] == (e.nome or "") and ult["sentido"] == sentido and acum[k] - ult["fim_m"] < 40:
+            ult["fim_m"] = acum[k + 1]
+            ult["inclinacao_pct"] = max(ult["inclinacao_pct"], e.inc)
+        else:
+            fortes.append({"rua": e.nome or "", "sentido": sentido, "inicio_m": acum[k], "fim_m": acum[k + 1],
+                           "inclinacao_pct": e.inc})
+    fortes = [dict(f, inicio_m=round(f["inicio_m"]), fim_m=round(f["fim_m"]), comp_m=round(f["fim_m"] - f["inicio_m"]),
+                   inclinacao_pct=round(f["inclinacao_pct"], 1))
+              for f in fortes if f["fim_m"] - f["inicio_m"] >= 20]
+
+    validas = [g.arestas[a] for a in arestas if g.arestas[a].comp >= 10]
+    maior = max(validas, key=lambda e: e.inc, default=None)
+    max_inc = round(maior.inc, 1) if maior else 0.0
+
+    quem = _nome_perfil_limite(ctx)
+    falas = []
+    for f in fortes[:4]:
+        onde = f"Na {_nome_rua(f['rua'])}" if f["rua"] else "Num trecho sem nome"
+        falas.append(f"{onde} tem uma {f['sentido']} de {_pct(f['inclinacao_pct'])}% por {falar_distancia(f['comp_m'])}.")
+    if len(fortes) > 4:
+        n = len(fortes) - 4
+        falas.append(f"E mais {n} {'trecho parecido, marcado' if n == 1 else 'trechos parecidos, marcados'} em laranja no gráfico.")
+    if fortes:
+        falas.append(f"O recomendado {quem} é até {_pct(limite)}%.")
+    elif max_inc >= 3:
+        falas.append(f"O caminho tem subidas leves: a mais íngreme tem {_pct(max_inc)}%, dentro do recomendado {quem} (até {_pct(limite)}%).")
+    else:
+        falas.append("O caminho é quase plano.")
+
+    return {
+        "disponivel": True,
+        "fonte": FONTE_RELEVO,
+        "perfil": perfil,
+        "sobe_m": round(sobe),
+        "desce_m": round(desce),
+        "altitude_min_m": round(min(alts)),
+        "altitude_max_m": round(max(alts)),
+        "max_inclinacao_pct": max_inc,
+        "rua_mais_ingreme": (maior.nome or "") if maior else "",
+        "limite_pct": limite,
+        "limite_para": quem,
+        "nbr9050_pct": NBR9050_RAMPA_PCT,
+        "fortes": fortes,
+        "falas": falas,
+    }
+
+
 def calcular(g: Grafo, origem: dict, destino: dict, ctx: Contexto) -> dict:
     indexar_relatos(g, ctx)
     o = g.no_mais_proximo(origem["lat"], origem["lon"])
@@ -498,6 +606,7 @@ def calcular(g: Grafo, origem: dict, destino: dict, ctx: Contexto) -> dict:
         raise SemRota("Você já está no destino.")
     nos, ars = a_estrela(g, o, d, ctx)
     segura = montar_rota(g, nos, ars, ctx, origem, destino)
+    segura["elevacao"] = perfil_elevacao(g, nos, ars, ctx)
     ctx_comum = Contexto(perfis=(), relatos=ctx.relatos, chuva_forte=ctx.chuva_forte, noite=ctx.noite, _perigo=ctx._perigo)
     nos_c, ars_c = a_estrela(g, o, d, ctx_comum)
     comum = montar_rota(g, nos_c, ars_c, ctx_comum, origem, destino)

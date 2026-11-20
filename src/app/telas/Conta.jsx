@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ExplicaInclinacao } from '../componentes/PerfilElevacao.jsx';
 import { Aviso, Botao, Cabecalho, CaixaFala, Carregando, Rodape, Tela, Titulo } from '../componentes/base.jsx';
 import { Icone } from '../componentes/Icone.jsx';
 import { BarraNav } from '../componentes/BarraNav.jsx';
@@ -172,6 +173,10 @@ export function Ajuda({ aoVoltar }) {
       <div className="lista-simples">
         {sugestoes.map((s) => <button key={s} type="button" className="item-ajuste" onClick={() => { setPergunta(s); perguntar(s); }}><Icone nome="ajuda" /><div><strong style={{ fontSize: 'inherit' }}>{s}</strong></div></button>)}
       </div>
+      <details className="detalhe-entrada o-que-e-ajuda">
+        <summary><Icone nome="plano" /><span>O que é inclinação (subida e descida)?</span></summary>
+        <ExplicaInclinacao />
+      </details>
       {carregando && <Carregando texto="Pensando…" />}
       {resp && <CaixaFala titulo={resp.resposta}>{resp.fonte && resp.fonte !== 'regras' ? 'Resposta gerada por IA a partir do manual do app.' : 'Resposta do manual do app.'}</CaixaFala>}
       <div className="empurra" />

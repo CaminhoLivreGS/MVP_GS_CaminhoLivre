@@ -9,6 +9,7 @@ import { api } from '../servicos/api.js';
 import { falar, vibrar, VIBRA } from '../servicos/voz.js';
 import { velocidadePerfil } from '../servicos/preferencias.js';
 import { CartaoEntrada } from './Local.jsx';
+import { ExplicaInclinacao, PerfilElevacao, formatarInclinacao } from '../componentes/PerfilElevacao.jsx';
 
 export const ICONE_RELATO = {
   buraco: 'buraco', calcada_irregular: 'buraco', obstaculo: 'obstaculo', sem_rampa: 'semRampa',
@@ -32,7 +33,10 @@ export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
   const semDados = rota.fonte_dados === 'sem_acessibilidade';
   const avisos = [...(rota.falas.motivos_desvio ?? []).slice(1), ...(rota.falas.avisos ?? [])];
   const entrada = rota.entrada;
-  const fala = [entrada?.fala, rota.falas.resumo_voz, ...(rota.falas.motivos_desvio ?? []), ...(rota.falas.avisos ?? [])].filter(Boolean).join(' ');
+  const relevo = rota.elevacao?.disponivel ? rota.elevacao : null;
+  // Relevo entra na fala só quando há trecho forte para o perfil (senão vira ruído).
+  const falaRelevo = relevo?.fortes?.length ? relevo.falas.join(' ') : null;
+  const fala = [entrada?.fala, rota.falas.resumo_voz, ...(rota.falas.motivos_desvio ?? []), ...(rota.falas.avisos ?? []), falaRelevo].filter(Boolean).join(' ');
   const [o, d] = [rota.geometria.coords[0], rota.geometria.coords.at(-1)];
   const linkMapa = `https://www.google.com/maps/dir/?api=1&origin=${o[0]},${o[1]}&destination=${d[0]},${d[1]}&travelmode=walking`;
   const marcadores = [
@@ -63,6 +67,7 @@ export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
             <li><strong>{semDados ? '?' : rota.escadas}</strong> {rota.escadas === 1 ? 'escada' : 'escadas'}</li>
             <li><strong>{rota.desvios.length}</strong> {rota.desvios.length === 1 ? 'desvio' : 'desvios'}</li>
             <li><strong>{rota.alertas_no_caminho.length}</strong> {rota.alertas_no_caminho.length === 1 ? 'aviso' : 'avisos'}</li>
+            {relevo && <li><strong>{relevo.sobe_m} m</strong> de subida</li>}
           </ul>
         </div>
         <div className="folha-rolavel">
@@ -79,6 +84,24 @@ export function PreviaRota({ rota, origem, aoComecar, aoVoltar }) {
             </button>
           )}
           {verAvisos && <ul className="lista-avisos">{avisos.map((a, i) => <li key={i}>{a}</li>)}</ul>}
+          {relevo && (
+            <details className="detalhe-entrada detalhe-relevo" open={relevo.fortes.length > 0}>
+              <summary>
+                <Icone nome="plano" />
+                <span><span className="rotulo-pequeno">Relevo do caminho</span>
+                  Sobe {relevo.sobe_m} m, desce {relevo.desce_m} m · mais íngreme: {formatarInclinacao(relevo.max_inclinacao_pct)}</span>
+              </summary>
+              <PerfilElevacao elevacao={relevo} />
+              <ul className="lista-relevo">
+                {relevo.falas.map((f) => <li key={f}>{f}</li>)}
+              </ul>
+              <details className="o-que-e">
+                <summary>O que é inclinação?</summary>
+                <ExplicaInclinacao limite={relevo.limite_pct} />
+              </details>
+              <p className="nota">Relevo: {relevo.fonte}. É uma estimativa: degraus e rampas curtas podem não aparecer.</p>
+            </details>
+          )}
           {entrada?.escolhida && (
             <details className="detalhe-entrada">
               <summary><Icone nome="porta" /><span><span className="rotulo-pequeno">Entrada recomendada</span>{entrada.escolhida.nome}</span></summary>
