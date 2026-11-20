@@ -1012,3 +1012,6 @@ img, video, canvas, svg { max-width: 100%; }
 .secao-transporte h2 .icone { width: 30px; height: 30px; }
 .secao-transporte .link-simples { align-self: flex-start; padding-left: 4px; }
 .secao-transporte .nota { margin: 0; }
+
+/* Filtros do mapa: cada chip mantém a largura do texto (+ check); a faixa rola na horizontal. */
+.filtros-barreiras .chip { flex: none; }

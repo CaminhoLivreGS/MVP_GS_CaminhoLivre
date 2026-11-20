@@ -42,16 +42,27 @@ export function MapaBarreiras({ origem, inicial = null, extra = null, aoVoltar, 
     api.relatos().then((r) => setRelatos(r.relatos.filter((x) => x.categoria !== 'entrada'))).catch((e) => setErro(e.message));
   }, []);
 
-  const perto = useMemo(() => (relatos ?? [])
+  const comDistancia = useMemo(() => (relatos ?? [])
     .map((r) => ({ ...r, distancia: origem ? distancia(origem, r) : 0 }))
-    .filter((r) => r.distancia <= RAIO_M && (filtro === 'todos' || r.categoria === filtro))
-    .sort((a, b) => a.distancia - b.distancia), [relatos, origem, filtro]);
+    .sort((a, b) => a.distancia - b.distancia), [relatos, origem]);
+  // Fora da área piloto (nenhum aviso num raio de 2,5 km, de nenhum tipo): mostra os avisos
+  // da área piloto, em vez de um mapa vazio, e enquadra o mapa neles.
+  const areaPiloto = relatos != null && relatos.length > 0 && !comDistancia.some((r) => r.distancia <= RAIO_M);
+  const perto = useMemo(() => comDistancia
+    .filter((r) => (areaPiloto || r.distancia <= RAIO_M) && (filtro === 'todos' || r.categoria === filtro)),
+  [comDistancia, areaPiloto, filtro]);
   // extra: relato que não está mais ativo (ex.: consertado, aberto pela Novidade)
   const atual = perto.find((r) => r.id === sel) ?? (relatos ?? []).find((r) => r.id === sel) ?? (extra?.id === sel ? extra : null);
 
-  const fala = relatos
-    ? `Mapa de barreiras. ${perto.length} ${perto.length === 1 ? 'problema avisado' : 'problemas avisados'} perto de você. Toque em um para ver a foto e confirmar se ainda está lá.`
-    : 'Mapa de barreiras.';
+  const nomeFiltro = filtro === 'todos' ? null : FILTROS.find((f) => f.id === filtro)?.nome.toLowerCase();
+  const titulo = areaPiloto
+    ? `${perto.length} ${perto.length === 1 ? 'barreira' : 'barreiras'} na área piloto`
+    : perto.length ? `${perto.length} ${perto.length === 1 ? 'barreira' : 'barreiras'} perto de você`
+      : nomeFiltro ? `Nenhum aviso de ${nomeFiltro} perto` : 'Nenhuma barreira avisada perto';
+  const fala = !relatos ? 'Mapa de barreiras.'
+    : areaPiloto
+      ? `Mapa de barreiras. Não há avisos perto de você. Mostrando ${perto.length} ${perto.length === 1 ? 'problema avisado' : 'problemas avisados'} na área piloto, Vila Yara, em Osasco.`
+      : `Mapa de barreiras. ${perto.length} ${perto.length === 1 ? 'problema avisado' : 'problemas avisados'} perto de você. Toque em um para ver a foto e confirmar se ainda está lá.`;
 
   const escolher = (r) => {
     setSel(r.id);
@@ -83,7 +94,9 @@ export function MapaBarreiras({ origem, inicial = null, extra = null, aoVoltar, 
     <Tela fala={relatos ? fala : undefined} fixa className="tela-barreiras">
       <Titulo className="so-leitor">Mapa de barreiras perto de você</Titulo>
       <div className="home-mapa">
-        <Mapa marcadores={marcadores} posicao={origem} altura="cheia" modo="seguir" zoomSeguir={15.5} focoAcima={0.2}
+        {/* key: ao descobrir que a pessoa está fora da área piloto, o mapa é recriado enquadrando os avisos. */}
+        <Mapa key={areaPiloto ? 'piloto' : 'perto'} marcadores={marcadores} posicao={areaPiloto ? null : origem} altura="cheia"
+          modo={areaPiloto ? 'visao' : 'seguir'} zoomSeguir={15.5} focoAcima={0.2} margemInferior={0.3} margemTopo={130}
           aoTocarMarcador={(id) => {
             const r = visiveis.find((x) => x.id === id);
             if (r) { escolher(r); setAberta(false); }
@@ -92,7 +105,7 @@ export function MapaBarreiras({ origem, inicial = null, extra = null, aoVoltar, 
       <div className="flutuante-topo flutuante-topo-coluna">
         <div className="flutuante-linha">
           <button type="button" className="botao-redondo" onClick={aoVoltar} aria-label="Voltar"><Icone nome="voltar" /></button>
-          <p className="pilula pilula-destino"><Icone nome="mapa" /><span>Barreiras perto de você</span></p>
+          <p className="pilula pilula-destino"><Icone nome="mapa" /><span>{areaPiloto ? 'Barreiras: Vila Yara' : 'Barreiras perto'}</span></p>
           <BotaoSom fala={fala} />
         </div>
         <div className="chips filtros-barreiras" role="radiogroup" aria-label="Filtrar por tipo">
@@ -142,7 +155,8 @@ export function MapaBarreiras({ origem, inicial = null, extra = null, aoVoltar, 
             <button type="button" className="folha-cabeca" aria-expanded={aberta} onClick={() => setAberta((v) => !v)}>
               <span className="folha-alca" aria-hidden="true" />
               <span className="folha-cabeca-texto">
-                <strong>{perto.length ? `${perto.length} ${perto.length === 1 ? 'barreira' : 'barreiras'} perto de você` : 'Nenhuma barreira avisada perto'}</strong>
+                <strong>{titulo}</strong>
+                {areaPiloto && <span className="nota">Nada avisado perto de você. Estes são da área piloto (Vila Yara, Osasco).</span>}
                 <span className="legenda-mapa" aria-hidden="true">
                   <span><i className="bolinha-legenda confirmado">!</i> confirmado</span>
                   <span><i className="bolinha-legenda verificacao">?</i> em verificação</span>

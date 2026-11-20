@@ -79,6 +79,7 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
   const enquadrado = useRef(false);
   // mapa de barreiras: trocar o marcador selecionado não deve reenquadrar o mapa
   const manterEnquadramento = useRef(false);
+  const voce = useRef(null);
 
   // cria o mapa uma vez
   useEffect(() => {
@@ -97,7 +98,17 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
     mapa.current = m;
     const ro = new ResizeObserver(() => m.invalidateSize());
     ro.observe(div.current);
-    return () => { ro.disconnect(); m.remove(); mapa.current = null; };
+    return () => {
+      ro.disconnect();
+      m.remove();
+      // O mapa pode ser recriado no mesmo componente (React StrictMode monta duas vezes):
+      // o estado que pertence ao mapa antigo não pode passar para o novo.
+      mapa.current = null;
+      voce.current = null;
+      tiles.current = null;
+      enquadrado.current = false;
+      manterEnquadramento.current = false;
+    };
   }, []);
 
   // camada de ruas conforme o tema
@@ -134,7 +145,6 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
   }, [chaveRota, comum, marcadores.map((x) => `${x.lat},${x.lon},${x.tipo}`).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // você (atualiza sem redesenhar a rota) + câmera
-  const voce = useRef(null);
   useEffect(() => {
     const m = mapa.current;
     if (!m) return;
@@ -154,14 +164,26 @@ export function Mapa({ coords = [], comum = null, marcadores = [], posicao = nul
     }
     if (enquadrado.current) return;
     const pts = [...coords, ...marcadores.map((x) => [x.lat, x.lon]), ...(posicao ? [[posicao.lat, posicao.lon]] : [])];
-    // margemInferior (fração da altura) e margemTopo (px): espaço coberto pelos painéis flutuantes.
-    const baixo = 28 + m.getSize().y * margemInferior;
-    const topo = 28 + margemTopo;
-    if (pts.length === 1) {
-      m.setView(pts[0], 16);
-      if (margemInferior || margemTopo) m.panBy([0, (baixo - topo) / 2], { animate: false });
-    } else if (pts.length > 1) m.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [28, topo], paddingBottomRight: [28, baixo], maxZoom: 17 });
-    enquadrado.current = pts.length > 0;
+    if (!pts.length) return;
+    enquadrado.current = true;
+    let tentativas = 0;
+    let espera = null;
+    const enquadrar = () => {
+      const mm = mapa.current;
+      if (!mm) return;
+      mm.invalidateSize();
+      // Recém-montado, o mapa pode ainda não ter altura: o fitBounds daria um zoom inválido. Espera o layout.
+      if (mm.getSize().y < 50 && tentativas++ < 20) { espera = setTimeout(enquadrar, 50); return; }
+      // margemInferior (fração da altura) e margemTopo (px): espaço coberto pelos painéis flutuantes.
+      const baixo = 28 + mm.getSize().y * margemInferior;
+      const topo = 28 + margemTopo;
+      if (pts.length === 1) {
+        mm.setView(pts[0], 16);
+        if (margemInferior || margemTopo) mm.panBy([0, (baixo - topo) / 2], { animate: false });
+      } else mm.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [28, topo], paddingBottomRight: [28, baixo], maxZoom: 17 });
+    };
+    enquadrar();
+    return () => clearTimeout(espera);
   }, [posicao?.lat, posicao?.lon, modo, chaveRota]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Recentralizar: volta a seguir a pessoa no zoom de navegação.
