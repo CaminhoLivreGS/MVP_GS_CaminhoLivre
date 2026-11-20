@@ -328,9 +328,11 @@ export function TipoAviso({ foto, posicao, aoEnviado, aoVoltar, aoRefazer }) {
           )}
           {erro && <Aviso tipo="erro">{erro}</Aviso>}
           <div className="empurra" />
-          <Botao icone="alerta" variante="alerta" disabled={!escolha || fase === 'enviando'} onClick={enviar}>
-            {fase === 'enviando' ? 'Enviando…' : 'Enviar aviso'}
-          </Botao>
+          <Rodape fixo>
+            <Botao icone="check" variante="alerta" disabled={!escolha || fase === 'enviando'} onClick={enviar}>
+              {fase === 'enviando' ? 'Enviando…' : escolha ? 'Confirmar foto e enviar' : 'Escolha o tipo para enviar'}
+            </Botao>
+          </Rodape>
         </>
       )}
     </Tela>
