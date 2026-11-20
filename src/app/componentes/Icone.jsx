@@ -15,6 +15,8 @@ const P = {
   casa: <><path d="M4 11l8-7 8 7" /><path d="M6 9.5V20h12V9.5" /></>,
   ubs: <><rect x="4" y="4" width="16" height="16" rx="3.5" /><path d="M12 8v8M8 12h8" /></>,
   estacao: <><rect x="6" y="3" width="12" height="13" rx="3" /><path d="M6 10h12" /><circle cx="9.5" cy="13" r=".6" /><circle cx="14.5" cy="13" r=".6" /><path d="M8.5 16L6.5 20M15.5 16l2 4" /></>,
+  onibus: <><rect x="5" y="3" width="14" height="15" rx="3" /><path d="M5 11h14" /><circle cx="8.5" cy="14.5" r=".6" /><circle cx="15.5" cy="14.5" r=".6" /><path d="M8 18v2.5M16 18v2.5M9 6.5h6" /></>,
+  carro: <><path d="M4 16v-4l2-5h12l2 5v4z" /><path d="M4 12h16" /><circle cx="7.5" cy="14" r=".6" /><circle cx="16.5" cy="14" r=".6" /><path d="M6 16v3M18 16v3" /></>,
   lugar: <><path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z" /><circle cx="12" cy="10" r="2.4" /></>,
   chuva: <><path d="M7 15a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 7.5a3.5 3.5 0 0 1 0 7.5z" /><path d="M8.5 18l-1 2.5M12.5 18l-1 2.5M16.5 18l-1 2.5" /></>,
   muleta: <><path d="M8 3l3 18" /><path d="M16 3l-3 18" /><path d="M6 3h4" /><path d="M14 3h4" /><path d="M8.6 10h3" /><path d="M12.4 10h3" /></>,

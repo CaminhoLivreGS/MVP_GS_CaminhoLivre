@@ -10,6 +10,8 @@ import { Saindo, lerCodigoLocal } from './telas/Local.jsx';
 import { Aviso, Botao, Cabecalho, Carregando, Tela, Titulo, VozContexto } from './componentes/base.jsx';
 import { apagarPerfil, carregar, salvar, salvarPerfil, usarPerfil } from './servicos/preferencias.js';
 import { Perfis } from './telas/Perfis.jsx';
+import { DestinoLonge, EscolherAppCorrida } from './telas/Longe.jsx';
+import { avaliarDistancia } from './servicos/transporte.js';
 import { distancia } from '../localizacao/geo.js';
 import { Celular } from './componentes/Celular.jsx';
 import { aoMudarModoDemo, api, definirDispositivo, emModoDemo, guardarRota } from './servicos/api.js';
@@ -64,6 +66,7 @@ export function App() {
   const [salvos, setSalvos] = useState([]);
   const [busca, setBusca] = useState({ carregando: false });
   const [rotaEstado, setRotaEstado] = useState({ carregando: false });
+  const [destinoLonge, setDestinoLonge] = useState(null);
   const [nav, setNav] = useState(null);
   const [chegada, setChegada] = useState(null);
   const [aviso, setAviso] = useState({});
@@ -232,6 +235,16 @@ export function App() {
     }
   }, [ir, origem, prefs]);
 
+  // Destino escolhido pela pessoa: se for longe para ir a pé, explica e oferece ônibus, carro ou app de corrida.
+  const irParaDestino = useCallback((destino) => {
+    if (origem && avaliarDistancia(origem, destino, prefs.perfis, prefs.vozDevagar).longe) {
+      setDestinoLonge(destino);
+      ir('longe');
+    } else {
+      calcularRota(destino);
+    }
+  }, [origem, prefs, ir, calcularRota]);
+
   // Veio do widget de uma instituição: assim que souber onde a pessoa está, calcula a rota até o lugar.
   useEffect(() => {
     if (!origem || !destinoPendente.current || tela !== 'home') return;
@@ -306,7 +319,7 @@ export function App() {
           {esperandoOrigem}</Tela>
       ) : (
         <Home key={digitar ? 'd' : 'n'} clima={clima} salvos={salvos} origem={origem} local={local} avisoOrigem={avisoOrigem} aoMenu={menu}
-          aoFalar={() => ir('ouvindo')} aoDigitar={buscarDestino} aoEscolher={calcularRota}
+          aoFalar={() => ir('ouvindo')} aoDigitar={buscarDestino} aoEscolher={irParaDestino}
           locaisPerto={locaisPerto} aoSaindo={() => ir('saindo')} modo={prefs.modo ?? 'fala'}
           perfil={(prefs.perfisSalvos ?? []).find((p) => p.id === prefs.perfilAtivo) ?? null} aoPerfis={() => ir('perfis')}
           barreiras={barreiras} aoBarreiras={(id) => { setMapaInicial(id ? barreiras.find((b) => b.id === id) ?? null : null); setPilha(['home', 'mapa']); }}
@@ -324,7 +337,7 @@ export function App() {
     case 'destino':
       conteudo = <ConfirmarDestino {...busca} aoVoltar={voltar} aoNao={() => { voltar(); ir('ouvindo'); }}
         aoBuscar={(t) => buscarDestino(t, { naMesmaTela: true })}
-        aoSim={(c) => { setPilha((p) => p.slice(0, -1)); calcularRota(c); }} />;
+        aoSim={(c) => { setPilha((p) => p.slice(0, -1)); irParaDestino(c); }} />;
       break;
     case 'rota':
       conteudo = rotaEstado.carregando ? (
@@ -378,6 +391,18 @@ export function App() {
       break;
     case 'meus':
       conteudo = <MeusAvisos aoVoltar={voltar} aoMenu={menu} />;
+      break;
+    case 'longe':
+      conteudo = destinoLonge && origem ? (
+        <DestinoLonge destino={destinoLonge} origem={origem} prefs={prefs} aoVoltar={voltar}
+          aoAPe={() => { setPilha((p) => p.slice(0, -1)); calcularRota(destinoLonge); }}
+          aoPontoOnibus={(ponto) => { setPilha((p) => p.slice(0, -1)); calcularRota({ ...ponto, categoria: 'ponto_onibus' }); }}
+          aoEscolherApp={() => ir('app_corrida')} />
+      ) : null;
+      break;
+    case 'app_corrida':
+      conteudo = <EscolherAppCorrida atual={prefs.appCorrida} aoVoltar={voltar}
+        aoSalvar={(id) => { setPrefs({ appCorrida: id }); voltar(); }} />;
       break;
     case 'ajustes':
       conteudo = <Ajustes prefs={prefs} aoMudar={setPrefs} aoVoltar={voltar} ir={ir} aoMenu={menu} />;

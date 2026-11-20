@@ -1005,3 +1005,10 @@ img, video, canvas, svg { max-width: 100%; }
   display: flex; align-items: center; justify-content: center; padding: 0 12px; font-size: 0.85rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--texto); background: var(--laranja-claro); border-bottom: 2px solid var(--laranja); }
+
+/* Destino longe: alternativas a ir a pé (ônibus, app de corrida, carro). */
+.secao-transporte { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; border-top: 2px solid var(--borda-suave); }
+.secao-transporte h2 { display: flex; align-items: center; gap: 10px; margin: 0; }
+.secao-transporte h2 .icone { width: 30px; height: 30px; }
+.secao-transporte .link-simples { align-self: flex-start; padding-left: 4px; }
+.secao-transporte .nota { margin: 0; }

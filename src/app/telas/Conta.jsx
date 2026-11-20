@@ -117,6 +117,7 @@ export function Ajustes({ prefs, aoMudar, aoVoltar, ir, aoMenu }) {
         const n = prefs.perfisSalvos?.length ?? 0;
         return ativo ? `${ativo.nome}: ${resumoPerfil(ativo)}${n > 1 ? ` · ${n} perfis` : ''}` : 'Nenhum ainda · cadastrar';
       })(), () => ir('perfis'))}
+      {item('carro', 'App de corrida', ({ uber: 'Uber', 99: '99', indrive: 'inDrive' })[prefs.appCorrida] ?? 'Nenhum · cadastrar', () => ir('app_corrida'))}
       {item('som', 'Voz e letra', `${prefs.vozAlta ? 'Falar tudo' : 'Mudo'} · voz ${prefs.vozDevagar ? 'lenta' : 'normal'} · letra ${{ pequena: 'pequena', media: 'média', grande: 'grande' }[prefs.letra]}`, () => ir('preferencias'))}
       {editando ? (
         <form className="cartao" style={{ padding: 18 }} onSubmit={(e) => { e.preventDefault(); aoMudar({ acompanhante: acomp.trim().slice(0, 40) }); setEditando(false); }}>

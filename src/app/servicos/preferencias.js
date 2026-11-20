@@ -22,6 +22,8 @@ export const PADRAO = {
   letra: 'media',
   tema: 'claro',
   acompanhante: '',
+  // App de corrida preferido para destinos longe ('uber' | '99' | 'indrive' | null). Fica só no aparelho.
+  appCorrida: null,
   dispositivo: null,
 };
 
