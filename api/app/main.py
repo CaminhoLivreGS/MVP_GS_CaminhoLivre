@@ -109,6 +109,21 @@ async def seguranca(request: Request, call_next):
     return resp
 
 
+# CORS: o front publicado no Vercel usa esta API (no Render) como reserva quando a
+# função do Vercel falha. Sem cookies: só libera a leitura das respostas pelo navegador.
+# Adicionado por último = middleware mais externo (responde o preflight antes dos outros).
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in config.CORS_ORIGENS.split(",") if o.strip()],
+    allow_origin_regex=config.CORS_ORIGENS_REGEX or None,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-Dispositivo"],
+    max_age=3600,
+)
+
+
 # Limite simples por IP (protege a cota do LLM/ORS e evita spam de relatos).
 _janelas: dict[str, deque] = defaultdict(deque)
 _ultima_limpeza = 0.0

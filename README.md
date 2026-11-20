@@ -38,6 +38,16 @@ Plano gratuito: o serviço "dorme" após 15 min sem acesso (o primeiro acesso le
 volta ao estado inicial a cada novo deploy (os relatos de demonstração são recriados).
 Para testar a mesma imagem localmente: `docker build -f Dockerfile.render -t caminho-livre . && docker run -p 8090:8090 caminho-livre`.
 
+**Link único (Vercel) com reserva em cadeia.** O link público é o do Vercel: front na CDN e API como função
+Python (`api/index.py`). O cliente ([`src/app/servicos/api.js`](src/app/servicos/api.js)) tenta, nesta ordem:
+1. `/api` no Vercel (mesma origem, rápido; o SQLite fica em `/tmp` e é apagado quando a função esfria);
+2. a API do Render (`VITE_API_RESERVA`, padrão `https://caminho-livre-6s2g.onrender.com`), se a 1 cair, der 5xx ou demorar.
+   O app "acorda" o Render ao abrir. O Render precisa liberar CORS para o Vercel: `CL_CORS_ORIGENS_REGEX` (padrão `*.vercel.app`);
+3. os **dados de demonstração** gravados da API real (`src/app/servicos/mocks.json`), com uma faixa avisando na tela.
+   Para regravar: suba a API local e rode `npm run mocks:gravar -- http://localhost:8090`.
+
+Erros de verdade da API (ex.: 422, 429) não trocam de servidor. Vercel e Render têm bancos separados.
+
 **Três entradas no mesmo app:** `/` (cidadão), **`/adm`** (Painel Administrativo da prefeitura; local sem token configurado: `adm-demo`)
 e **`/embed/<lugar>`** (widget "Como chegar com acessibilidade" para o site de instituições, ex.: `/embed/shopping-uniao-osasco`).
 O que o pitch promete e onde está no app: [`docs/PITCH_X_MVP.md`](docs/PITCH_X_MVP.md).

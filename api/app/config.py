@@ -44,3 +44,8 @@ FUSO = "America/Sao_Paulo"
 # Front compilado (npm run build). Se existir, a própria API serve o app
 # (deploy em um único serviço, ex.: Render). Em desenvolvimento, o Vite serve.
 FRONT_DIR = Path(os.getenv("CL_FRONT_DIR", API_DIR.parent / "dist"))
+
+# CORS: origens que podem chamar a API de outro domínio (o front no Vercel usa o
+# Render como reserva). Lista separada por vírgula e/ou uma expressão regular.
+CORS_ORIGENS = os.getenv("CL_CORS_ORIGENS", "http://localhost:5173")
+CORS_ORIGENS_REGEX = os.getenv("CL_CORS_ORIGENS_REGEX", r"https://[a-z0-9-]+\.vercel\.app")

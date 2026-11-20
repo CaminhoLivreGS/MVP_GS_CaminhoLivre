@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "node --test test/*.test.js",
     "test:precisao": "node scripts/avaliar-precisao.js",
-    "dataset:brasil": "node scripts/gerar-manifesto-brasil.js"
+    "dataset:brasil": "node scripts/gerar-manifesto-brasil.js",
+    "mocks:gravar": "node scripts/gravar-mocks.js"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible": "5.2.6",

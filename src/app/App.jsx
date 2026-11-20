@@ -12,7 +12,7 @@ import { apagarPerfil, carregar, salvar, salvarPerfil, usarPerfil } from './serv
 import { Perfis } from './telas/Perfis.jsx';
 import { distancia } from '../localizacao/geo.js';
 import { Celular } from './componentes/Celular.jsx';
-import { api, definirDispositivo, guardarRota } from './servicos/api.js';
+import { aoMudarModoDemo, api, definirDispositivo, emModoDemo, guardarRota } from './servicos/api.js';
 import { configurarVibracao, configurarVoz, falar, temVozPortugues } from './servicos/voz.js';
 import { FonteGPS } from '../localizacao/fontes.js';
 
@@ -56,6 +56,9 @@ export function App() {
   const [origem, setOrigem] = useState(null);
   const [avisoOrigem, setAvisoOrigem] = useState(null);
   const [semServidor, setSemServidor] = useState(false);
+  // Nenhuma API respondeu: o app mostra os dados de exemplo gravados (ver servicos/mock.js).
+  const [modoDemo, setModoDemo] = useState(emModoDemo);
+  useEffect(() => aoMudarModoDemo(setModoDemo), []);
   const [tentativa, setTentativa] = useState(0);
   const [clima, setClima] = useState(null);
   const [salvos, setSalvos] = useState([]);
@@ -402,6 +405,9 @@ export function App() {
     <Celular>
     <div className="app">
       <a className="pular" href="#conteudo">Pular para o conteúdo</a>
+      {modoDemo && (
+        <div className="faixa-demo" role="status">Servidor indisponível: mostrando dados de exemplo da Vila Yara.</div>
+      )}
       <div id="conteudo">
         {nav && (
           <Navegacao key={nav.chave} rotaInicial={nav.rota} prefs={prefs} simular={nav.simular} pedidoRota={nav.pedido}
