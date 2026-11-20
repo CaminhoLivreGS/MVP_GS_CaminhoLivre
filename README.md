@@ -3,6 +3,20 @@
 **"Waze para pedestres":** a rota a pé mais segura para o seu jeito de andar (bengala, cadeira de rodas, baixa visão), com voz,
 avisos da comunidade e visão computacional. Território do piloto: **Vila Yara e Centro de Osasco (SP)**.
 
+## Acesse o MVP
+
+| | Link |
+|---|---|
+| **App do cidadão (principal)** | **https://mvp-gs-caminho-livre.vercel.app** · demonstração reproduzível: [`/?chuva=nao`](https://mvp-gs-caminho-livre.vercel.app/?chuva=nao) |
+| Painel Administrativo (prefeitura) | https://mvp-gs-caminho-livre.vercel.app/adm (token de demonstração: `adm-demo`) |
+| Widget "Como chegar com acessibilidade" | https://mvp-gs-caminho-livre.vercel.app/embed/shopping-uniao-osasco |
+| API (documentação OpenAPI) | https://mvp-gs-caminho-livre.vercel.app/api/docs |
+| Reserva (Render, mesma versão) | https://caminho-livre-6s2g.onrender.com (o plano gratuito "dorme": o 1º acesso leva ~50 s) |
+
+Abra no celular para usar GPS, câmera e microfone de verdade. No computador, o app aparece numa moldura de celular.
+A câmera de demonstração mostra uma cena simulada de buraco na calçada (para apresentar no notebook); use `?camera=real` para a câmera do aparelho.
+O que o pitch promete e onde está no app: [`docs/PITCH_X_MVP.md`](docs/PITCH_X_MVP.md).
+
 ## MVP integrado (front React + API + dados)
 
 ```
