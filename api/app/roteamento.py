@@ -517,56 +517,61 @@ def _pct(v: float) -> str:
 
 
 def perfil_elevacao(g: Grafo, nos: list[int], arestas: list[int], ctx: Contexto, max_pontos: int = 120) -> dict:
-    """Relevo do caminho, a partir da altitude real dos pontos do grafo.
-
-    Devolve o perfil (distância x altitude) para o gráfico, quanto sobe e desce no total,
-    o trecho mais íngreme e as subidas/descidas fortes para o perfil, com frases simples.
-    """
+    """Relevo do caminho no grafo (piloto ou OSM ao vivo), com a altitude real de cada ponto."""
     alt = getattr(g, "alt", None)
     tem_relevo = bool(alt) and g.meta.get("relevo", True) and any(alt[n] for n in nos)
     if not tem_relevo or len(nos) < 2:
         return {"disponivel": False, "fonte": FONTE_RELEVO}
+    segs = [{"comp": g.arestas[ai].comp, "inc": g.arestas[ai].inc, "nome": g.arestas[ai].nome or ""} for ai in arestas]
+    return montar_elevacao([float(alt[n]) for n in nos], segs, ctx, max_pontos)
+
+
+def montar_elevacao(alts: list[float], segs: list[dict], ctx: Contexto, max_pontos: int = 120) -> dict:
+    """Relevo a partir das altitudes dos pontos do caminho e dos trechos entre eles.
+
+    alts: altitude de cada ponto (len = len(segs) + 1); segs: {comp, inc, nome} de cada trecho.
+    Devolve o perfil (distância x altitude) para o gráfico, quanto sobe e desce no total,
+    o trecho mais íngreme e as subidas/descidas fortes para o perfil, com frases simples.
+    """
     acum = [0.0]
-    for ai in arestas:
-        acum.append(acum[-1] + g.arestas[ai].comp)
-    alts = [float(alt[n]) for n in nos]
+    for sg in segs:
+        acum.append(acum[-1] + sg["comp"])
     sobe = sum(max(0.0, b - a) for a, b in zip(alts, alts[1:]))
     desce = sum(max(0.0, a - b) for a, b in zip(alts, alts[1:]))
 
     # Perfil para o gráfico: no máximo max_pontos, sempre com o primeiro e o último.
-    passo = max(1, len(nos) // max_pontos)
-    idx = list(range(0, len(nos), passo))
-    if idx[-1] != len(nos) - 1:
-        idx.append(len(nos) - 1)
+    passo = max(1, len(alts) // max_pontos)
+    idx = list(range(0, len(alts), passo))
+    if idx[-1] != len(alts) - 1:
+        idx.append(len(alts) - 1)
     perfil = [[round(acum[i]), round(alts[i], 1)] for i in idx]
 
-    # Trechos fortes: arestas seguidas acima do limite, juntas por rua (ignora pedaços < 10 m, ruído do relevo).
+    # Trechos fortes: trechos seguidos acima do limite, juntos por rua (ignora pedaços < 10 m, ruído do relevo).
     limite = limite_inclinacao(ctx)
     fortes: list[dict] = []
-    for k, ai in enumerate(arestas):
-        e = g.arestas[ai]
-        if e.inc <= limite or e.comp < 10:
+    for k, sg in enumerate(segs):
+        if sg["inc"] <= limite or sg["comp"] < 10:
             continue
         sentido = "subida" if alts[k + 1] >= alts[k] else "descida"
         ult = fortes[-1] if fortes else None
-        if ult and ult["rua"] == (e.nome or "") and ult["sentido"] == sentido and acum[k] - ult["fim_m"] < 40:
+        if ult and ult["rua"] == sg["nome"] and ult["sentido"] == sentido and acum[k] - ult["fim_m"] < 40:
             ult["fim_m"] = acum[k + 1]
-            ult["inclinacao_pct"] = max(ult["inclinacao_pct"], e.inc)
+            ult["inclinacao_pct"] = max(ult["inclinacao_pct"], sg["inc"])
         else:
-            fortes.append({"rua": e.nome or "", "sentido": sentido, "inicio_m": acum[k], "fim_m": acum[k + 1],
-                           "inclinacao_pct": e.inc})
+            fortes.append({"rua": sg["nome"], "sentido": sentido, "inicio_m": acum[k], "fim_m": acum[k + 1],
+                           "inclinacao_pct": sg["inc"]})
     fortes = [dict(f, inicio_m=round(f["inicio_m"]), fim_m=round(f["fim_m"]), comp_m=round(f["fim_m"] - f["inicio_m"]),
                    inclinacao_pct=round(f["inclinacao_pct"], 1))
               for f in fortes if f["fim_m"] - f["inicio_m"] >= 20]
 
-    validas = [g.arestas[a] for a in arestas if g.arestas[a].comp >= 10]
-    maior = max(validas, key=lambda e: e.inc, default=None)
-    max_inc = round(maior.inc, 1) if maior else 0.0
+    validos = [sg for sg in segs if sg["comp"] >= 10]
+    maior = max(validos, key=lambda sg: sg["inc"], default=None)
+    max_inc = round(maior["inc"], 1) if maior else 0.0
 
     quem = _nome_perfil_limite(ctx)
     falas = []
     for f in fortes[:4]:
-        onde = f"Na {_nome_rua(f['rua'])}" if f["rua"] else "Num trecho sem nome"
+        onde = f"Na {f['rua']}" if f["rua"] and f["rua"] != "calçada" else "Num trecho do caminho"
         falas.append(f"{onde} tem uma {f['sentido']} de {_pct(f['inclinacao_pct'])}% por {falar_distancia(f['comp_m'])}.")
     if len(fortes) > 4:
         n = len(fortes) - 4
@@ -587,7 +592,7 @@ def perfil_elevacao(g: Grafo, nos: list[int], arestas: list[int], ctx: Contexto,
         "altitude_min_m": round(min(alts)),
         "altitude_max_m": round(max(alts)),
         "max_inclinacao_pct": max_inc,
-        "rua_mais_ingreme": (maior.nome or "") if maior else "",
+        "rua_mais_ingreme": maior["nome"] if maior else "",
         "limite_pct": limite,
         "limite_para": quem,
         "nbr9050_pct": NBR9050_RAMPA_PCT,

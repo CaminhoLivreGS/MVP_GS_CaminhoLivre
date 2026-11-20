@@ -1036,3 +1036,10 @@ img, video, canvas, svg { max-width: 100%; }
 .explica-inclinacao p, .explica-inclinacao ul { margin: 0; }
 .explica-inclinacao ul { padding-left: 20px; }
 .o-que-e-ajuda > :not(summary) { margin: 0 14px 14px; }
+
+/* "Estou saindo": espaço entre os blocos de cada passo (chips, QR, campo, lista, busca). */
+.secao-saindo { display: flex; flex-direction: column; gap: 14px; }
+.secao-saindo > h2 { margin: 22px 0 0; }
+.secao-saindo .chips { gap: 10px; }
+.secao-saindo .digitar { margin-top: 4px; }
+.dica-saindo { text-align: center; margin: 8px 0 0; }

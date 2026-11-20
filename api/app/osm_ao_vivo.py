@@ -105,6 +105,55 @@ def _overpass(consulta: str, timeout=9) -> dict:
     raise IndisponivelOSM("; ".join(erros))
 
 
+def altitudes_da_rota(coords, acumulado, manobras=(), max_pontos=100):
+    """Altitude ao longo de uma rota (sem grafo: plano B OSRM/ORS), em 1 chamada à Open-Meteo.
+
+    Amostra até max_pontos pontos espaçados igualmente pela distância. Devolve (alts, segs)
+    no formato de roteamento.montar_elevacao, ou None se o relevo estiver indisponível.
+    """
+    if len(coords) < 2 or not acumulado or acumulado[-1] <= 0:
+        return None
+    total = acumulado[-1]
+    n = min(max_pontos, max(2, int(total // 10) + 1))  # ~1 ponto a cada 10 m, até 100
+    pts, j = [], 0
+    for i in range(n):
+        alvo = total * i / (n - 1)
+        while j < len(acumulado) - 2 and acumulado[j + 1] < alvo:
+            j += 1
+        a0, a1 = acumulado[j], acumulado[j + 1]
+        t = 0.0 if a1 <= a0 else (alvo - a0) / (a1 - a0)
+        (la0, lo0), (la1, lo1) = coords[j], coords[j + 1]
+        pts.append((alvo, la0 + (la1 - la0) * t, lo0 + (lo1 - lo0) * t))
+    try:
+        r = requests.get(ELEVACAO, timeout=10, headers=UA, params={
+            "latitude": ",".join(f"{p[1]:.5f}" for p in pts), "longitude": ",".join(f"{p[2]:.5f}" for p in pts)})
+        r.raise_for_status()
+        alts = [float(z) for z in r.json()["elevation"]]
+    except (requests.RequestException, KeyError, ValueError, TypeError):
+        return None
+    if len(alts) != len(pts):
+        return None
+    # O modelo de terreno tem células de 90 m: a altitude muda em "degraus". Amostrando a cada
+    # ~20 m, cada degrau viraria uma rampa falsa de 20-30%. Média móvel numa janela de ~90 m.
+    passo = total / (len(pts) - 1)
+    meia = max(1, round(45 / passo))
+    alts = [sum(alts[max(0, i - meia):i + meia + 1]) / len(alts[max(0, i - meia):i + meia + 1]) for i in range(len(alts))]
+    # Nome da rua de cada trecho: o da última manobra antes dele (OSRM/ORS trazem a rua de cada passo).
+    ruas = sorted((m.get("acumulado_m", 0), m.get("rua") or "") for m in manobras if m.get("tipo") != "chegada")
+    def rua_em(d):
+        nome = ""
+        for a, r in ruas:
+            if a > d + 1:
+                break
+            nome = r
+        return nome
+    segs = []
+    for (d0, *_), (d1, *_), z0, z1 in zip(pts, pts[1:], alts, alts[1:]):
+        comp = max(d1 - d0, 0.1)
+        segs.append({"comp": comp, "inc": min(30.0, abs(z1 - z0) / comp * 100), "nome": rua_em(d0)})
+    return alts, segs
+
+
 def _altitudes(bbox, k=10):
     """Grade k x k (100 pontos = 1 chamada) de altitude; None se indisponível."""
     s, w, n, e = bbox

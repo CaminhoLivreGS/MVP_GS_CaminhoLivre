@@ -233,7 +233,7 @@ export function Saindo({ origem, perfis, salvos, inicial, hora, aoVoltar, aoRota
       )}
       {local.dados_exemplo && <p className="selo-exemplo">Dados de exemplo · serão trocados pelo levantamento em campo</p>}
 
-      <section aria-labelledby="t-onde">
+      <section className="secao-saindo" aria-labelledby="t-onde">
         <h2 id="t-onde">1. Em que parte você está?</h2>
         {lendo ? (
           <LeitorQR aoFechar={() => setLendo(false)} aoLer={(t) => {
@@ -252,9 +252,7 @@ export function Saindo({ origem, perfis, salvos, inicial, hora, aoVoltar, aoRota
                 </button>
               ))}
             </div>
-            <div className="linha-botoes">
-              <Botao variante="secundario" icone="qr" onClick={() => setLendo(true)}>Ler código</Botao>
-            </div>
+            <Botao variante="secundario" icone="qr" onClick={() => setLendo(true)}>Ler o código QR do lugar</Botao>
             <label className="campo">
               <span>Ou escreva como falaria</span>
               <input value={texto} onChange={(ev) => { setTexto(ev.target.value); setPonto(null); }}
@@ -265,7 +263,7 @@ export function Saindo({ origem, perfis, salvos, inicial, hora, aoVoltar, aoRota
         )}
       </section>
 
-      <section aria-labelledby="t-para">
+      <section className="secao-saindo" aria-labelledby="t-para">
         <h2 id="t-para">2. Para onde você vai?</h2>
         <div className="lista-simples">
           {opcoesDestino.map((d) => (
@@ -289,6 +287,7 @@ export function Saindo({ origem, perfis, salvos, inicial, hora, aoVoltar, aoRota
       <Botao icone="saida" disabled={!pronto || res.carregando} onClick={calcular}>
         {res.carregando ? 'Procurando a melhor saída…' : 'Qual a melhor saída?'}
       </Botao>
+      {!pronto && !res.carregando && <p className="nota dica-saindo">Escolha onde você está (1) e para onde vai (2).</p>}
     </Tela>
   );
 }

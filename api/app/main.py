@@ -26,7 +26,8 @@ from . import adm, assistente, clima, config, entradas, ors, osm_ao_vivo
 from .grafo import Grafo, distancia_m
 from .lugares import TIPO_LLM_PARA_CATEGORIA, Lugares, categoria_do_texto, tokens
 from .relatos import ErroRelato, Relatos
-from .roteamento import PERFIS, VELOCIDADE_MS, Contexto, SemRota, calcular, criterios_rota, fala_resumo
+from .roteamento import (FONTE_RELEVO, PERFIS, VELOCIDADE_MS, Contexto, SemRota, calcular, criterios_rota, fala_resumo,
+                         montar_elevacao)
 
 logging.basicConfig(level=logging.INFO, format='{"t":"%(asctime)s","nivel":"%(levelname)s","msg":%(message)s}')
 log = logging.getLogger("caminho_livre")
@@ -322,6 +323,10 @@ def rota(p: PedidoRota):
                 r = osm_ao_vivo.rota_osrm(origem, destino, vel)
             except (requests.RequestException, KeyError, IndexError):
                 raise HTTPException(503, "Não consegui calcular a rota agora. Tente de novo em um minuto.")
+        # Relevo não depende do OSM: mesmo no plano B, a altitude vem da Open-Meteo ao longo do caminho.
+        geo = r.get("geometria") or {}
+        amostra = osm_ao_vivo.altitudes_da_rota(geo.get("coords") or [], geo.get("acumulado_m") or [], r.get("manobras") or [])
+        r["elevacao"] = montar_elevacao(*amostra, ctx) if amostra else {"disponivel": False, "fonte": FONTE_RELEVO}
         r["perfil"] = list(ctx.perfis)
         r["preferencias"] = list(ctx.preferencias)
         r["criterios"] = criterios_rota(r, ctx.preferencias)
