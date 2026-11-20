@@ -91,8 +91,9 @@ async function chamar(caminho, { metodo = 'GET', corpo, form, timeout = 15000 } 
       return dados;
     } catch (e) {
       if (!(e instanceof ErroServidor)) throw e;
-      lenta ||= e.message === 'lenta';
-      foraAte.set(base, Date.now() + PAUSA_MS);
+      // Um pedido lento (ex.: busca ao vivo no OSM) não quer dizer servidor fora: não o tira da fila.
+      if (e.message === 'lenta') lenta = true;
+      else foraAte.set(base, Date.now() + PAUSA_MS);
     }
   }
   // Nenhuma API respondeu: usa os dados de demonstração, se houver para este pedido.

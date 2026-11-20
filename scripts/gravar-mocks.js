@@ -39,7 +39,7 @@ for (const l of locais.locais) local[l.id] = await get(`/locais/${encodeURICompo
 // Frases de exemplo para o assistente (o mock escolhe pela palavra-chave).
 const destino = {};
 for (const [chave, fala] of [['ubs', 'quero ir na UBS'], ['estacao', 'quero ir na estação de trem'],
-  ['farmacia', 'preciso de uma farmácia'], ['shopping', 'quero ir no shopping']]) {
+  ['farmacia', 'preciso de uma farmácia'], ['shopping', 'Shopping União']]) {
   destino[chave] = await post('/assistente/destino', { fala, lat: casa.lat, lon: casa.lon });
 }
 

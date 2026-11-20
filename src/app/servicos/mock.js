@@ -74,11 +74,24 @@ export async function respostaMock(caminho, { metodo, corpo, form }) {
 
   if (p === '/assistente/destino') {
     const fala = semAcento(corpo?.fala);
+    // 1) Pelo nome: algum lugar gravado cujo nome tenha as palavras ditas (ex.: "shopping união").
+    const palavras = fala.split(/\s+/).filter((w) => w.length > 2 && !['quero', 'para', 'uma', 'ir', 'preciso'].includes(w));
+    const todos = [...Object.values(m.destino).flatMap((d) => d.candidatos), ...Object.values(m.lugares).flatMap((x) => x.lugares)];
+    const porNome = [...new Map(todos.map((l) => [l.id, l])).values()]
+      .filter((l) => palavras.length && palavras.every((w) => semAcento(l.nome).includes(w)));
+    if (porNome.length) {
+      const [l] = porNome;
+      return { ...m.destino.ubs, candidatos: porNome,
+        fala: `Encontrei ${l.nome}, a ${Math.round((l.distancia_m ?? 0) / 100) * 100} metros. Quer ir para lá?` };
+    }
+    // 2) Pelo tipo de lugar.
     const chave = Object.keys(m.destino).find((k) => fala.includes(k)
       || (k === 'ubs' && /saude|posto|medic/.test(fala))
-      || (k === 'estacao' && /trem|metro|cptm/.test(fala))
+      || (k === 'estacao' && /trem|metro|cptm|onibus|terminal/.test(fala))
       || (k === 'farmacia' && /remedio|drogaria/.test(fala)));
-    return m.destino[chave ?? 'ubs'];
+    // 3) Lugar que não está nos dados de exemplo: "não encontrei" (nunca leva a outro lugar por engano).
+    return chave ? m.destino[chave]
+      : { ...m.destino.ubs, candidatos: [], fala: 'Nos dados de exemplo não tenho esse lugar. Tente UBS, farmácia, estação ou Shopping União.' };
   }
   if (p === '/rotas') {
     // A rota gravada cujo destino fica mais perto do pedido.

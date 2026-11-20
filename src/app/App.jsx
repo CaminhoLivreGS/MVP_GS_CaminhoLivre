@@ -406,7 +406,7 @@ export function App() {
     <div className="app">
       <a className="pular" href="#conteudo">Pular para o conteúdo</a>
       {modoDemo && (
-        <div className="faixa-demo" role="status">Servidor indisponível: mostrando dados de exemplo da Vila Yara.</div>
+        <div className="faixa-demo" role="status">Sem servidor: dados de exemplo (Vila Yara)</div>
       )}
       <div id="conteudo">
         {nav && (

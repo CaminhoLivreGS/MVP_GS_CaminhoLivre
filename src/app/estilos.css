@@ -30,7 +30,8 @@
   --primario-texto: var(--sobre-verde);
   --escala: 1;
   --raio: 22px;
-  --altura-tela: 100dvh;
+  --altura-base: 100dvh;
+  --altura-tela: var(--altura-base);
   --largura-tela: 100vw;
   color-scheme: light;
 }
@@ -417,7 +418,7 @@ h2 { font-size: calc(1.3rem * var(--escala)); font-weight: 700; }
 .celular-status, .celular-home, .moldura-legenda { display: none; }
 /* min-height: celular DEITADO (largo mas baixo) não ganha moldura; usa a tela inteira. */
 @media (min-width: 600px) and (min-height: 600px) {
-  :root { --largura-tela: 412px; --altura-tela: 856px; }
+  :root { --largura-tela: 412px; --altura-base: 856px; --altura-tela: var(--altura-base); }
   html, body { height: 100%; }
   body { background: radial-gradient(circle at 50% 35%, #ece8df, #cdc6b8); display: flex; flex-direction: column; align-items: center;
     justify-content: center; overflow: hidden; }
@@ -997,6 +998,10 @@ img, video, canvas, svg { max-width: 100%; }
   .app > #conteudo > .tela-home, .app > #conteudo > .tela-rota, .app > #conteudo > .tela-barreiras { padding-bottom: 0 !important; }
 }
 
-/* Faixa do modo demonstração (nenhuma API respondeu: dados de exemplo). */
-.faixa-demo { position: sticky; top: 0; z-index: 50; padding: 6px 16px; font-size: 0.9rem; text-align: center;
+/* Faixa do modo demonstração (nenhuma API respondeu: dados de exemplo).
+   Altura fixa, descontada da altura da tela para não empurrar os botões do rodapé. */
+.app:has(> .faixa-demo) { --altura-faixa: 34px; --altura-tela: calc(var(--altura-base) - var(--altura-faixa)); }
+.faixa-demo { position: sticky; top: 0; z-index: 50; height: var(--altura-faixa); box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; padding: 0 12px; font-size: 0.85rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--texto); background: var(--laranja-claro); border-bottom: 2px solid var(--laranja); }
